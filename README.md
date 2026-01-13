@@ -107,11 +107,15 @@ Navigate with `↑/k` and `↓/j` to preview themes live, then press `Enter` to 
 
 ## State Persistence
 
-Reminders are automatically saved to `~/.go_remind/reminders_state.json`. Your reminder states (acknowledged, snoozed times, etc.) persist across sessions.
+Reminders are automatically saved to `~/.go_remind/reminders_state.json`. This means:
+
+- Quit and restart the app—your reminders are still there
+- Acknowledged, snoozed, and deleted states persist across sessions
+- Reminders created in the TUI are saved alongside file-parsed ones
 
 ## Dependencies
 
-Go Remind is built with these excellent libraries:
+Go Remind Me! is built with these excellent libraries:
 
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea) - The Elm-inspired TUI framework
 - [Bubbles](https://github.com/charmbracelet/bubbles) - TUI components (list, text input, help)
