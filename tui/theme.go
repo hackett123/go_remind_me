@@ -70,6 +70,17 @@ var themes = []Theme{
 		Accent:      lipgloss.Color("#66d9ef"),
 		Muted:       lipgloss.Color("#75715e"),
 	},
+	{
+		Name:        "Everforest",
+		Title:       lipgloss.Color("#A7C080"),
+		Normal:      lipgloss.Color("#D3C6AA"),
+		Triggered:   lipgloss.Color("#E67E80"),
+		Acknowledged: lipgloss.Color("#859289"),
+		Source:      lipgloss.Color("#859289"),
+		Selected:    lipgloss.Color("#83C092"),
+		Accent:      lipgloss.Color("#7FBBB3"),
+		Muted:       lipgloss.Color("#7A8478"),
+	},
 }
 
 func (t Theme) applyStyles() {
