@@ -275,6 +275,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case key.Matches(msg, keys.Unacknowledge):
+			r := m.selectedReminder()
+			if r != nil && r.Status == reminder.Acknowledged {
+				// Restore to appropriate state based on whether time has passed
+				if time.Now().After(r.DateTime) {
+					r.Status = reminder.Triggered
+				} else {
+					r.Status = reminder.Pending
+				}
+				m.refreshList()
+			}
+			return m, nil
+
 		case key.Matches(msg, keys.Snooze5m):
 			m.snooze(5 * time.Minute)
 			return m, nil
@@ -326,24 +339,29 @@ func (m Model) View() string {
 
 	b.WriteString(m.list.View())
 	b.WriteString("\n")
-	b.WriteString(statusBarStyle.Render("enter: done  1/2/3: snooze 5m/1h/1d  dd: delete  /: filter  q: quit"))
+	b.WriteString(statusBarStyle.Render("enter: done  u: unack  1/2/3: snooze 5m/1h/1d  dd: delete  /: filter  q: quit"))
 
 	return appStyle.Render(b.String())
 }
 
 // Key bindings
 type keyMap struct {
-	Acknowledge key.Binding
-	Snooze5m    key.Binding
-	Snooze1h    key.Binding
-	Snooze1d    key.Binding
-	Quit        key.Binding
+	Acknowledge   key.Binding
+	Unacknowledge key.Binding
+	Snooze5m      key.Binding
+	Snooze1h      key.Binding
+	Snooze1d      key.Binding
+	Quit          key.Binding
 }
 
 var keys = keyMap{
 	Acknowledge: key.NewBinding(
 		key.WithKeys("enter", " "),
 		key.WithHelp("enter/space", "acknowledge"),
+	),
+	Unacknowledge: key.NewBinding(
+		key.WithKeys("u"),
+		key.WithHelp("u", "unacknowledge"),
 	),
 	Snooze5m: key.NewBinding(
 		key.WithKeys("1"),
