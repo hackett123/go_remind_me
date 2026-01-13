@@ -185,7 +185,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Acknowledge):
 			if len(m.reminders) > 0 {
 				r := m.reminders[m.cursor]
-				if r.Status == reminder.Triggered {
+				if r.Status == reminder.Pending || r.Status == reminder.Triggered {
 					r.Status = reminder.Acknowledged
 				}
 			}
