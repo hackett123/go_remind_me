@@ -115,8 +115,20 @@ func (i reminderItem) FilterValue() string {
 // itemDelegate handles rendering of list items
 type itemDelegate struct{}
 
-func (d itemDelegate) Height() int                             { return 1 }
-func (d itemDelegate) Spacing() int                            { return 0 }
+func (d itemDelegate) Height() int {
+	if currentLayout == LayoutCard {
+		return 4
+	}
+	return 1
+}
+
+func (d itemDelegate) Spacing() int {
+	if currentLayout == LayoutCard {
+		return 1
+	}
+	return 0
+}
+
 func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
@@ -125,11 +137,18 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		return
 	}
 
+	if currentLayout == LayoutCard {
+		d.renderCard(w, m, index, i)
+	} else {
+		d.renderCompact(w, m, index, i)
+	}
+}
+
+func (d itemDelegate) renderCompact(w io.Writer, m list.Model, index int, i reminderItem) {
 	r := i.reminder
 	timeStr := r.DateTime.Format("Jan 2 3:04pm")
 	source := filepath.Base(r.SourceFile)
 
-	// Build the line content
 	var statusIcon string
 	var style lipgloss.Style
 
@@ -153,7 +172,6 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		}
 	}
 
-	// Truncate description if needed
 	desc := r.Description
 	if len(desc) > 35 {
 		desc = desc[:32] + "..."
@@ -164,6 +182,45 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	sourcePart := sourceStyle.Render(source)
 
 	fmt.Fprintf(w, "%s  %s", styledLine, sourcePart)
+}
+
+func (d itemDelegate) renderCard(w io.Writer, m list.Model, index int, i reminderItem) {
+	r := i.reminder
+	timeStr := r.DateTime.Format("Mon Jan 2 • 3:04pm")
+	source := filepath.Base(r.SourceFile)
+	isSelected := index == m.Index()
+
+	var style, borderColor lipgloss.Style
+	switch r.Status {
+	case reminder.Triggered:
+		style = triggeredStyle
+		borderColor = lipgloss.NewStyle().Foreground(triggeredStyle.GetForeground())
+	case reminder.Acknowledged:
+		style = acknowledgedStyle
+		borderColor = lipgloss.NewStyle().Foreground(acknowledgedStyle.GetForeground())
+	default:
+		style = normalStyle
+		borderColor = lipgloss.NewStyle().Foreground(normalStyle.GetForeground())
+	}
+
+	if isSelected {
+		borderColor = lipgloss.NewStyle().Foreground(selectedItemStyle.GetForeground())
+		if r.Status != reminder.Triggered && r.Status != reminder.Acknowledged {
+			style = selectedItemStyle
+		}
+	}
+
+	cardStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor.GetForeground()).
+		Padding(0, 1).
+		Width(60)
+
+	desc := style.Render(r.Description)
+	meta := sourceStyle.Render(timeStr + "  •  " + source + "  •  " + r.Status.String())
+	content := desc + "\n" + meta
+
+	fmt.Fprint(w, cardStyle.Render(content))
 }
 
 // Model is the Bubble Tea model for the reminder TUI
@@ -456,6 +513,11 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.previewTheme = m.themeIndex
 		return m, nil
 
+	case key.Matches(msg, keys.Layout):
+		currentLayout = (currentLayout + 1) % LayoutMode(len(layoutNames))
+		m.list.SetDelegate(itemDelegate{})
+		return m, nil
+
 	case key.Matches(msg, keys.Filter):
 		m.mode = modeFilter
 		m.filterInput.Focus()
@@ -731,6 +793,7 @@ type keyMap struct {
 	Filter        key.Binding
 	Add           key.Binding
 	Theme         key.Binding
+	Layout        key.Binding
 	Help          key.Binding
 	Quit          key.Binding
 }
@@ -745,7 +808,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Acknowledge, k.Unacknowledge},
 		{k.Snooze5m, k.Snooze1h, k.Snooze1d, k.Delete},
-		{k.Filter, k.Add, k.Theme, k.Help, k.Quit},
+		{k.Filter, k.Add, k.Theme, k.Layout, k.Help, k.Quit},
 	}
 }
 
@@ -793,6 +856,10 @@ var keys = keyMap{
 	Theme: key.NewBinding(
 		key.WithKeys("t"),
 		key.WithHelp("t", "theme"),
+	),
+	Layout: key.NewBinding(
+		key.WithKeys("v"),
+		key.WithHelp("v", "view"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
