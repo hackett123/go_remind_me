@@ -56,28 +56,40 @@ var (
 // TickMsg is sent every second to check for triggered reminders
 type TickMsg time.Time
 
+// FileUpdateMsg is sent when a watched file is updated
+type FileUpdateMsg struct {
+	FilePath  string
+	Reminders []*reminder.Reminder
+}
+
 // Model is the Bubble Tea model for the reminder TUI
 type Model struct {
-	reminders []*reminder.Reminder
-	cursor    int
-	width     int
-	height    int
+	reminders     []*reminder.Reminder
+	cursor        int
+	width         int
+	height        int
+	watcherEvents <-chan FileUpdateMsg // Channel for file update events
 }
 
 // New creates a new TUI model with the given reminders
-func New(reminders []*reminder.Reminder) Model {
+func New(reminders []*reminder.Reminder, watcherEvents <-chan FileUpdateMsg) Model {
 	return Model{
-		reminders: reminders,
-		cursor:    0,
+		reminders:     reminders,
+		cursor:        0,
+		watcherEvents: watcherEvents,
 	}
 }
 
 // Init initializes the model and starts the tick timer
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		tickCmd(),
 		tea.EnterAltScreen,
-	)
+	}
+	if m.watcherEvents != nil {
+		cmds = append(cmds, m.waitForFileUpdate())
+	}
+	return tea.Batch(cmds...)
 }
 
 // tickCmd returns a command that sends a TickMsg after 1 second
@@ -85,6 +97,20 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return TickMsg(t)
 	})
+}
+
+// waitForFileUpdate waits for a file update event from the watcher
+func (m Model) waitForFileUpdate() tea.Cmd {
+	return func() tea.Msg {
+		if m.watcherEvents == nil {
+			return nil
+		}
+		event, ok := <-m.watcherEvents
+		if !ok {
+			return nil
+		}
+		return event
+	}
 }
 
 // snooze postpones the currently selected triggered reminder by the given duration
@@ -154,6 +180,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+	case FileUpdateMsg:
+		// Merge new reminders with existing ones (deduplication)
+		m.reminders = reminder.MergeFromFile(m.reminders, msg.FilePath, msg.Reminders)
+		reminder.SortByDateTime(m.reminders)
+		// Keep cursor in bounds
+		if m.cursor >= len(m.reminders) && len(m.reminders) > 0 {
+			m.cursor = len(m.reminders) - 1
+		}
+		// Continue listening for more updates
+		return m, m.waitForFileUpdate()
 	}
 
 	return m, nil

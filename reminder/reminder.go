@@ -47,3 +47,54 @@ func SortByDateTime(reminders []*Reminder) {
 		return reminders[i].DateTime.Before(reminders[j].DateTime)
 	})
 }
+
+// MergeFromFile merges new reminders from a file with existing reminders.
+// Deduplication is based on (SourceFile, Description):
+// - Existing reminders from the same file with matching descriptions are preserved (keeps original DateTime/Status)
+// - New reminders with no match are added
+// - Pending/triggered reminders from the file that no longer exist are removed
+// - Acknowledged reminders are always kept (even if removed from file)
+func MergeFromFile(existing []*Reminder, filePath string, newReminders []*Reminder) []*Reminder {
+	// Build a map of new reminders by description for quick lookup
+	newByDesc := make(map[string]*Reminder)
+	for _, r := range newReminders {
+		newByDesc[r.Description] = r
+	}
+
+	// Build result: start with reminders from OTHER files + acknowledged from this file
+	var result []*Reminder
+	matchedDescs := make(map[string]bool)
+
+	for _, r := range existing {
+		if r.SourceFile != filePath {
+			// Keep reminders from other files unchanged
+			result = append(result, r)
+			continue
+		}
+
+		// This reminder is from the file being updated
+		if r.Status == Acknowledged {
+			// Always keep acknowledged reminders
+			result = append(result, r)
+			matchedDescs[r.Description] = true
+			continue
+		}
+
+		// Check if this reminder still exists in the new parse
+		if _, exists := newByDesc[r.Description]; exists {
+			// Keep the existing reminder (preserves DateTime and Status)
+			result = append(result, r)
+			matchedDescs[r.Description] = true
+		}
+		// If not in newByDesc, it was removed from the file - don't include it
+	}
+
+	// Add new reminders that weren't matched
+	for _, r := range newReminders {
+		if !matchedDescs[r.Description] {
+			result = append(result, r)
+		}
+	}
+
+	return result
+}
