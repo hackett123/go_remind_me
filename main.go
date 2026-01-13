@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"go_remind/reminder"
+	"go_remind/state"
 	"go_remind/tui"
 	"go_remind/watcher"
 )
@@ -15,6 +16,15 @@ import (
 func main() {
 	var reminders []*reminder.Reminder
 	var tuiEvents chan tui.FileUpdateMsg
+
+	// Load saved state first
+	savedReminders, err := state.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not load state: %v\n", err)
+	}
+	if savedReminders != nil {
+		reminders = savedReminders
+	}
 
 	if len(os.Args) >= 2 {
 		// File/directory mode
@@ -26,15 +36,18 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Parse initial reminders
-		var isDir bool
-		reminders, isDir, err = watcher.ParseInitial(absPath)
+		// Parse reminders from files
+		fileReminders, isDir, err := watcher.ParseInitial(absPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing: %v\n", err)
 			os.Exit(1)
 		}
 
-		reminder.SortByDateTime(reminders)
+		// Merge file reminders with saved state
+		// File reminders take precedence for deduplication
+		for _, fr := range fileReminders {
+			reminders = reminder.MergeFromFile(reminders, fr.SourceFile, []*reminder.Reminder{fr})
+		}
 
 		// Set up file watcher
 		w, err := watcher.New()
@@ -72,7 +85,8 @@ func main() {
 			close(tuiEvents)
 		}()
 	}
-	// else: standalone mode - no file watching, empty reminders
+
+	reminder.SortByDateTime(reminders)
 
 	// Run the TUI
 	model := tui.New(reminders, tuiEvents)

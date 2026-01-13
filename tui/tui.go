@@ -16,6 +16,7 @@ import (
 
 	"go_remind/datetime"
 	"go_remind/reminder"
+	"go_remind/state"
 )
 
 // Input modes
@@ -262,6 +263,14 @@ func (m Model) waitForFileUpdate() tea.Cmd {
 	}
 }
 
+// saveState persists the current reminders to disk
+func (m *Model) saveState() {
+	// Save in background to avoid blocking UI
+	go func() {
+		_ = state.Save(m.reminders) // Ignore errors for now
+	}()
+}
+
 // refreshList updates the list items from the current reminders, applying filter if active
 func (m *Model) refreshList() {
 	var filtered []*reminder.Reminder
@@ -304,6 +313,7 @@ func (m *Model) snooze(duration time.Duration) {
 	r.Status = reminder.Pending
 	reminder.SortByDateTime(m.reminders)
 	m.refreshList()
+	m.saveState()
 }
 
 // deleteCurrentReminder removes the currently selected reminder from tracking
@@ -320,6 +330,7 @@ func (m *Model) deleteCurrentReminder() {
 		}
 	}
 	m.refreshList()
+	m.saveState()
 }
 
 // addReminder parses the input and adds a new reminder
@@ -353,6 +364,7 @@ func (m *Model) addReminder(input string) error {
 			m.reminders = append(m.reminders, r)
 			reminder.SortByDateTime(m.reminders)
 			m.refreshList()
+			m.saveState()
 			return nil
 		}
 	}
@@ -386,6 +398,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if changed {
 			m.refreshList()
+			m.saveState()
 		}
 		return m, tickCmd()
 
@@ -403,6 +416,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reminders = reminder.MergeFromFile(m.reminders, msg.FilePath, msg.Reminders)
 		reminder.SortByDateTime(m.reminders)
 		m.refreshList()
+		m.saveState()
 		return m, m.waitForFileUpdate()
 	}
 
@@ -449,6 +463,7 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if r != nil && (r.Status == reminder.Pending || r.Status == reminder.Triggered) {
 			r.Status = reminder.Acknowledged
 			m.refreshList()
+			m.saveState()
 		}
 		return m, nil
 
@@ -461,6 +476,7 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				r.Status = reminder.Pending
 			}
 			m.refreshList()
+			m.saveState()
 		}
 		return m, nil
 
