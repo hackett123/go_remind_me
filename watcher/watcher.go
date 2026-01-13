@@ -56,24 +56,24 @@ func (w *Watcher) WatchDirectory(dir string) error {
 		return err
 	}
 
-	// Walk directory and watch all .md files
+	// Walk directory and watch all .md files and subdirectories
 	err = filepath.Walk(absDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && filepath.Ext(path) == ".md" {
+		if info.IsDir() {
+			// Watch all directories for new files
+			if err := w.fsWatcher.Add(path); err != nil {
+				log.Printf("Warning: could not watch directory %s: %v", path, err)
+			}
+		} else if filepath.Ext(path) == ".md" {
 			if err := w.fsWatcher.Add(path); err != nil {
 				log.Printf("Warning: could not watch %s: %v", path, err)
 			}
 		}
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-
-	// Also watch the directory itself for new files
-	return w.fsWatcher.Add(absDir)
+	return err
 }
 
 // Start begins watching for file changes
@@ -105,11 +105,16 @@ func (w *Watcher) run() {
 
 			// Only process markdown files
 			if filepath.Ext(event.Name) != ".md" {
-				// If it's a new .md file in a watched directory, add it
+				// If it's a new directory or .md file, add it to watch list
 				if event.Has(fsnotify.Create) {
 					info, err := os.Stat(event.Name)
-					if err == nil && !info.IsDir() && filepath.Ext(event.Name) == ".md" {
-						w.fsWatcher.Add(event.Name)
+					if err == nil {
+						if info.IsDir() {
+							// Watch new directory and all its .md files
+							w.WatchDirectory(event.Name)
+						} else if filepath.Ext(event.Name) == ".md" {
+							w.fsWatcher.Add(event.Name)
+						}
 					}
 				}
 				continue
