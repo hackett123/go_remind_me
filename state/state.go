@@ -21,18 +21,12 @@ type savedReminder struct {
 
 // GetStatePath returns the path to the state file
 func GetStatePath() (string, error) {
-	// Use user's config directory
-	configDir, err := os.UserConfigDir()
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		// Fall back to home directory
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		configDir = homeDir
+		return "", err
 	}
 
-	stateDir := filepath.Join(configDir, "go_remind")
+	stateDir := filepath.Join(homeDir, ".go_remind")
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		return "", err
 	}
