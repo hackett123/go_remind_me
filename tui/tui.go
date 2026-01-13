@@ -260,7 +260,7 @@ func New(reminders []*reminder.Reminder, watcherEvents <-chan FileUpdateMsg) Mod
 	items := remindersToItems(reminders)
 
 	l := list.New(items, itemDelegate{}, 80, 20)
-	l.Title = "Go Remind"
+	l.Title = "Go Remind Me!"
 	l.Styles.Title = titleStyle
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false) // We'll handle filtering ourselves
@@ -724,7 +724,7 @@ func (m Model) welcomeView() string {
 
 	var lines []string
 
-	lines = append(lines, welcomeTitleStyle.Render("Welcome to Go Remind!"))
+	lines = append(lines, welcomeTitleStyle.Render("Welcome to Go Remind Me!"))
 	lines = append(lines, "")
 	lines = append(lines, welcomeTextStyle.Render("A simple terminal reminder app."))
 	lines = append(lines, "")
@@ -763,7 +763,7 @@ func (m Model) View() string {
 
 	// Use grid view for card layout, list view for compact
 	if currentLayout == LayoutCard {
-		b.WriteString(titleStyle.Render("Go Remind"))
+		b.WriteString(titleStyle.Render("Go Remind Me!"))
 		b.WriteString("\n\n")
 		b.WriteString(m.gridView())
 	} else {
