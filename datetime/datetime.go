@@ -54,11 +54,25 @@ var timeOnlyFormats = []string{
 // relativePattern matches strings like +2h, +30m, +1d, +1h30m
 var relativePattern = regexp.MustCompile(`^\+(\d+[dhms])+$`)
 
+// inPattern matches "in X days/hours/minutes"
+var inPattern = regexp.MustCompile(`^in\s+(\d+)\s*(d|day|days|h|hour|hours|m|min|mins|minute|minutes)$`)
+
 // Parse attempts to parse a datetime string using multiple formats.
 // relativeTo is used as the base time for relative times (e.g., +2h).
 // Returns the parsed time or an error if no format matched.
 func Parse(input string, relativeTo time.Time) (time.Time, error) {
 	input = strings.TrimSpace(input)
+	lower := strings.ToLower(input)
+
+	// Try "tomorrow" variants
+	if strings.HasPrefix(lower, "tomorrow") {
+		return parseTomorrow(input, relativeTo)
+	}
+
+	// Try "in X days/hours" pattern
+	if match := inPattern.FindStringSubmatch(lower); match != nil {
+		return parseInDuration(match, relativeTo)
+	}
 
 	// Try relative time first
 	if relativePattern.MatchString(input) {
@@ -129,4 +143,45 @@ func parseRelative(input string, relativeTo time.Time) (time.Time, error) {
 	}
 
 	return result, nil
+}
+
+
+// parseTomorrow handles "tomorrow" and "tomorrow 9am" style inputs
+func parseTomorrow(input string, relativeTo time.Time) (time.Time, error) {
+	tomorrow := relativeTo.AddDate(0, 0, 1)
+	lower := strings.ToLower(input)
+
+	// Just "tomorrow" - default to 9am
+	if lower == "tomorrow" {
+		return time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(),
+			9, 0, 0, 0, time.Local), nil
+	}
+
+	// "tomorrow <time>" - parse the time part
+	timeStr := strings.TrimSpace(input[8:]) // len("tomorrow") = 8
+	for _, format := range timeOnlyFormats {
+		if t, err := time.ParseInLocation(format, timeStr, time.Local); err == nil {
+			return time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(),
+				t.Hour(), t.Minute(), t.Second(), 0, time.Local), nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("unable to parse time in: %q", input)
+}
+
+// parseInDuration handles "in X days/hours/minutes" style inputs
+func parseInDuration(match []string, relativeTo time.Time) (time.Time, error) {
+	num, _ := strconv.Atoi(match[1])
+	unit := match[2]
+
+	switch unit[0] {
+	case 'd':
+		return relativeTo.AddDate(0, 0, num), nil
+	case 'h':
+		return relativeTo.Add(time.Duration(num) * time.Hour), nil
+	case 'm':
+		return relativeTo.Add(time.Duration(num) * time.Minute), nil
+	}
+
+	return time.Time{}, fmt.Errorf("unknown unit: %s", unit)
 }

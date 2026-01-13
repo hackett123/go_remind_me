@@ -50,6 +50,7 @@ Go Remind supports flexible datetime parsing:
 | Format | Example |
 |--------|---------|
 | Relative | `+30m`, `+2h`, `+1d`, `+1h30m` |
+| Natural | `tomorrow`, `tomorrow 9am`, `in 3 days`, `in 2 hours` |
 | Time only (today) | `3pm`, `3:30pm`, `15:30` |
 | Date + time | `Jan 15 3pm`, `January 15 3:30pm` |
 | Full date | `Jan 15 2025 3pm`, `2025-01-15 15:30` |
