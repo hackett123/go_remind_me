@@ -232,6 +232,10 @@ type Model struct {
 	width         int
 	height        int
 
+	// Grid mode
+	gridIndex   int
+	gridColumns int
+
 	// Input handling
 	mode        inputMode
 	filterInput textinput.Model
@@ -355,6 +359,13 @@ func (m *Model) refreshList() {
 
 // selectedReminder returns the currently selected reminder, or nil if none
 func (m *Model) selectedReminder() *reminder.Reminder {
+	if currentLayout == LayoutCard {
+		items := m.getFilteredReminders()
+		if m.gridIndex >= 0 && m.gridIndex < len(items) {
+			return items[m.gridIndex]
+		}
+		return nil
+	}
 	item := m.list.SelectedItem()
 	if item == nil {
 		return nil
@@ -471,11 +482,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.help.Width = msg.Width
-		listHeight := msg.Height - 10 // Leave room for input boxes
+		listHeight := msg.Height - 10
 		if listHeight < 5 {
 			listHeight = 5
 		}
 		m.list.SetSize(msg.Width-4, listHeight)
+		// Calculate grid columns (card width ~40 + margin)
+		m.gridColumns = (msg.Width - 4) / 40
+		if m.gridColumns < 1 {
+			m.gridColumns = 1
+		}
 
 	case FileUpdateMsg:
 		m.reminders = reminder.MergeFromFile(m.reminders, msg.FilePath, msg.Reminders)
@@ -567,6 +583,39 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Snooze1d):
 		m.snooze(24 * time.Hour)
 		return m, nil
+	}
+
+	// Handle grid navigation in card mode
+	if currentLayout == LayoutCard {
+		items := m.getFilteredReminders()
+		maxIdx := len(items) - 1
+		if maxIdx < 0 {
+			maxIdx = 0
+		}
+		switch {
+		case key.Matches(msg, keys.Up):
+			m.gridIndex -= m.gridColumns
+			if m.gridIndex < 0 {
+				m.gridIndex = 0
+			}
+			return m, nil
+		case key.Matches(msg, keys.Down):
+			m.gridIndex += m.gridColumns
+			if m.gridIndex > maxIdx {
+				m.gridIndex = maxIdx
+			}
+			return m, nil
+		case msg.String() == "h" || msg.String() == "left":
+			if m.gridIndex > 0 {
+				m.gridIndex--
+			}
+			return m, nil
+		case msg.String() == "l" || msg.String() == "right":
+			if m.gridIndex < maxIdx {
+				m.gridIndex++
+			}
+			return m, nil
+		}
 	}
 
 	var cmd tea.Cmd
@@ -709,7 +758,14 @@ func (m Model) View() string {
 		return appStyle.Render(b.String())
 	}
 
-	b.WriteString(m.list.View())
+	// Use grid view for card layout, list view for compact
+	if currentLayout == LayoutCard {
+		b.WriteString(titleStyle.Render("Go Remind"))
+		b.WriteString("\n\n")
+		b.WriteString(m.gridView())
+	} else {
+		b.WriteString(m.list.View())
+	}
 
 	// Show input boxes based on mode
 	switch m.mode {
@@ -756,6 +812,85 @@ func (m Model) View() string {
 	}
 
 	return appStyle.Render(b.String())
+}
+
+func (m Model) gridView() string {
+	items := m.getFilteredReminders()
+	if len(items) == 0 {
+		return normalStyle.Render("No reminders")
+	}
+
+	cardWidth := 38
+	cols := m.gridColumns
+	if cols < 1 {
+		cols = 1
+	}
+
+	var rows []string
+	for i := 0; i < len(items); i += cols {
+		var rowCards []string
+		for j := 0; j < cols && i+j < len(items); j++ {
+			idx := i + j
+			rowCards = append(rowCards, m.renderCard(items[idx], idx, cardWidth))
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, rowCards...))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+}
+
+func (m Model) renderCard(r *reminder.Reminder, index, width int) string {
+	timeStr := r.DateTime.Format("Jan 2 3:04pm")
+	source := filepath.Base(r.SourceFile)
+	isSelected := index == m.gridIndex
+
+	var style lipgloss.Style
+	var borderColor lipgloss.TerminalColor
+	switch r.Status {
+	case reminder.Triggered:
+		style = triggeredStyle
+		borderColor = triggeredStyle.GetForeground()
+	case reminder.Acknowledged:
+		style = acknowledgedStyle
+		borderColor = acknowledgedStyle.GetForeground()
+	default:
+		style = normalStyle
+		borderColor = normalStyle.GetForeground()
+	}
+
+	if isSelected {
+		borderColor = selectedItemStyle.GetForeground()
+		if r.Status != reminder.Triggered && r.Status != reminder.Acknowledged {
+			style = selectedItemStyle
+		}
+	}
+
+	cardStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(0, 1).
+		Width(width).
+		MarginRight(1)
+
+	desc := r.Description
+	if len(desc) > width-4 {
+		desc = desc[:width-7] + "..."
+	}
+	content := style.Render(desc) + "\n" + sourceStyle.Render(timeStr+" • "+source)
+	return cardStyle.Render(content)
+}
+
+func (m Model) getFilteredReminders() []*reminder.Reminder {
+	filterText := strings.ToLower(m.filterInput.Value())
+	if filterText == "" {
+		return m.reminders
+	}
+	var filtered []*reminder.Reminder
+	for _, r := range m.reminders {
+		if strings.Contains(strings.ToLower(r.Description), filterText) {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
 }
 
 func (m Model) themePickerView() string {
