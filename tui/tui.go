@@ -69,6 +69,19 @@ var (
 	inputHintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
 			Italic(true)
+
+	// Welcome screen styles
+	welcomeTitleStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("205")).
+				Bold(true).
+				MarginBottom(1)
+
+	welcomeTextStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252"))
+
+	welcomeHighlightStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("170")).
+				Bold(true)
 )
 
 // TickMsg is sent every second to check for triggered reminders
@@ -516,9 +529,51 @@ func (m Model) updateAddMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// welcomeView renders the welcome screen for standalone mode
+func (m Model) welcomeView() string {
+	width := m.width
+	if width == 0 {
+		width = 80
+	}
+
+	var lines []string
+
+	lines = append(lines, welcomeTitleStyle.Render("Welcome to Go Remind!"))
+	lines = append(lines, "")
+	lines = append(lines, welcomeTextStyle.Render("A simple terminal reminder app."))
+	lines = append(lines, "")
+	lines = append(lines, welcomeTextStyle.Render("Get started:"))
+	lines = append(lines, welcomeTextStyle.Render("Press ")+welcomeHighlightStyle.Render("n")+welcomeTextStyle.Render(" to add a new reminder"))
+	lines = append(lines, welcomeTextStyle.Render("Press ")+welcomeHighlightStyle.Render("?")+welcomeTextStyle.Render(" to see all commands"))
+	lines = append(lines, "")
+	lines = append(lines, welcomeTextStyle.Render("Or run with a file/directory:"))
+	lines = append(lines, inputHintStyle.Render("go_remind notes.md"))
+	lines = append(lines, inputHintStyle.Render("go_remind ~/notes/"))
+	lines = append(lines, "")
+	lines = append(lines, welcomeTextStyle.Render("Reminders in markdown use:"))
+	lines = append(lines, inputHintStyle.Render("[remind_me 3pm Call mom]"))
+	lines = append(lines, inputHintStyle.Render("[remind_me +1h Check oven]"))
+
+	// Center each line
+	var centered []string
+	for _, line := range lines {
+		centered = append(centered, lipgloss.PlaceHorizontal(width-4, lipgloss.Center, line))
+	}
+
+	return strings.Join(centered, "\n")
+}
+
 // View renders the UI
 func (m Model) View() string {
 	var b strings.Builder
+
+	// Show welcome screen if no reminders and in standalone mode
+	if len(m.reminders) == 0 && m.watcherEvents == nil && m.mode == modeNormal {
+		b.WriteString(m.welcomeView())
+		b.WriteString("\n\n")
+		b.WriteString(m.help.View(m.keys))
+		return appStyle.Render(b.String())
+	}
 
 	b.WriteString(m.list.View())
 

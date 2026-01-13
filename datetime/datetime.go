@@ -37,6 +37,20 @@ var absoluteFormats = []string{
 	"January 2 3PM",
 }
 
+// Time-only formats (will use today's date)
+var timeOnlyFormats = []string{
+	"3:04pm",
+	"3:04PM",
+	"3:04 pm",
+	"3:04 PM",
+	"3pm",
+	"3PM",
+	"3 pm",
+	"3 PM",
+	"15:04",
+	"15:04:05",
+}
+
 // relativePattern matches strings like +2h, +30m, +1d, +1h30m
 var relativePattern = regexp.MustCompile(`^\+(\d+[dhms])+$`)
 
@@ -60,6 +74,16 @@ func Parse(input string, relativeTo time.Time) (time.Time, error) {
 				t = t.AddDate(relativeTo.Year(), 0, 0)
 			}
 			return t, nil
+		}
+	}
+
+	// Try time-only formats (use today's date)
+	for _, format := range timeOnlyFormats {
+		if t, err := time.ParseInLocation(format, input, time.Local); err == nil {
+			// Combine today's date with the parsed time
+			today := relativeTo
+			return time.Date(today.Year(), today.Month(), today.Day(),
+				t.Hour(), t.Minute(), t.Second(), 0, time.Local), nil
 		}
 	}
 
