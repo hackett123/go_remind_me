@@ -26,6 +26,7 @@ const (
 	modeNormal inputMode = iota
 	modeFilter
 	modeAdd
+	modeTheme
 )
 
 // Styles
@@ -179,6 +180,11 @@ type Model struct {
 	filterInput textinput.Model
 	addInput    textinput.Model
 	inputError  string
+
+	// Theme picker
+	themeIndex    int
+	previewTheme  int
+	originalTheme int
 
 	// Help
 	help help.Model
@@ -382,6 +388,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateFilterMode(msg)
 		case modeAdd:
 			return m.updateAddMode(msg)
+		case modeTheme:
+			return m.updateThemeMode(msg)
 		default:
 			return m.updateNormalMode(msg)
 		}
@@ -441,6 +449,12 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, keys.Quit):
 		return m, tea.Quit
+
+	case key.Matches(msg, keys.Theme):
+		m.mode = modeTheme
+		m.originalTheme = m.themeIndex
+		m.previewTheme = m.themeIndex
+		return m, nil
 
 	case key.Matches(msg, keys.Filter):
 		m.mode = modeFilter
@@ -545,6 +559,48 @@ func (m Model) updateAddMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) updateThemeMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEscape:
+		// Restore original theme
+		m.themeIndex = m.originalTheme
+		themes[m.themeIndex].applyStyles()
+		m.mode = modeNormal
+		return m, nil
+	case tea.KeyEnter:
+		// Confirm selection
+		m.themeIndex = m.previewTheme
+		m.mode = modeNormal
+		return m, nil
+	case tea.KeyUp, tea.KeyShiftTab:
+		if m.previewTheme > 0 {
+			m.previewTheme--
+			themes[m.previewTheme].applyStyles()
+		}
+		return m, nil
+	case tea.KeyDown, tea.KeyTab:
+		if m.previewTheme < len(themes)-1 {
+			m.previewTheme++
+			themes[m.previewTheme].applyStyles()
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "k":
+		if m.previewTheme > 0 {
+			m.previewTheme--
+			themes[m.previewTheme].applyStyles()
+		}
+	case "j":
+		if m.previewTheme < len(themes)-1 {
+			m.previewTheme++
+			themes[m.previewTheme].applyStyles()
+		}
+	}
+	return m, nil
+}
+
 // welcomeView renders the welcome screen for standalone mode
 func (m Model) welcomeView() string {
 	width := m.width
@@ -620,6 +676,10 @@ func (m Model) View() string {
 			b.WriteString(errStyle.Render("  ⚠ " + m.inputError))
 		}
 
+	case modeTheme:
+		b.WriteString("\n")
+		b.WriteString(m.themePickerView())
+
 	default:
 		// Show filter indicator if filter is active
 		if m.filterInput.Value() != "" {
@@ -636,6 +696,28 @@ func (m Model) View() string {
 	return appStyle.Render(b.String())
 }
 
+func (m Model) themePickerView() string {
+	var b strings.Builder
+	b.WriteString(inputLabelStyle.Render("🎨 Select Theme"))
+	b.WriteString(inputHintStyle.Render("  (↑/k ↓/j to preview, enter to select, esc to cancel)"))
+	b.WriteString("\n\n")
+
+	for i, t := range themes {
+		cursor := "  "
+		if i == m.previewTheme {
+			cursor = "▸ "
+		}
+		name := t.Name
+		if i == m.previewTheme {
+			name = selectedItemStyle.Render(name)
+		} else {
+			name = normalStyle.Render(name)
+		}
+		b.WriteString(cursor + name + "\n")
+	}
+	return b.String()
+}
+
 // Key bindings
 type keyMap struct {
 	Up            key.Binding
@@ -648,6 +730,7 @@ type keyMap struct {
 	Snooze1d      key.Binding
 	Filter        key.Binding
 	Add           key.Binding
+	Theme         key.Binding
 	Help          key.Binding
 	Quit          key.Binding
 }
@@ -662,7 +745,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Acknowledge, k.Unacknowledge},
 		{k.Snooze5m, k.Snooze1h, k.Snooze1d, k.Delete},
-		{k.Filter, k.Add, k.Help, k.Quit},
+		{k.Filter, k.Add, k.Theme, k.Help, k.Quit},
 	}
 }
 
@@ -706,6 +789,10 @@ var keys = keyMap{
 	Add: key.NewBinding(
 		key.WithKeys("n"),
 		key.WithHelp("n", "new"),
+	),
+	Theme: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "theme"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
