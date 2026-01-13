@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -51,6 +52,9 @@ var (
 	helpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
 			MarginTop(1)
+
+	sourceStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241"))
 )
 
 // TickMsg is sent every second to check for triggered reminders
@@ -69,6 +73,7 @@ type Model struct {
 	width         int
 	height        int
 	watcherEvents <-chan FileUpdateMsg // Channel for file update events
+	pendingDelete bool                  // True if 'd' was pressed, waiting for second 'd'
 }
 
 // New creates a new TUI model with the given reminders
@@ -131,10 +136,38 @@ func (m *Model) snooze(duration time.Duration) {
 	}
 }
 
+// deleteCurrentReminder removes the currently selected reminder from tracking
+func (m *Model) deleteCurrentReminder() {
+	if len(m.reminders) == 0 {
+		return
+	}
+	// Remove the reminder at cursor position
+	m.reminders = append(m.reminders[:m.cursor], m.reminders[m.cursor+1:]...)
+	// Keep cursor in bounds
+	if m.cursor >= len(m.reminders) && len(m.reminders) > 0 {
+		m.cursor = len(m.reminders) - 1
+	}
+}
+
 // Update handles messages and updates the model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle 'dd' for delete (vim-style)
+		if msg.String() == "d" {
+			if m.pendingDelete {
+				// Second 'd' - perform delete
+				m.deleteCurrentReminder()
+				m.pendingDelete = false
+			} else {
+				// First 'd' - wait for second
+				m.pendingDelete = true
+			}
+			return m, nil
+		}
+		// Any other key cancels pending delete
+		m.pendingDelete = false
+
 		switch {
 		case key.Matches(msg, keys.Quit):
 			return m, tea.Quit
@@ -205,10 +238,10 @@ func (m Model) View() string {
 	b.WriteString("\n\n")
 
 	// Header
-	header := fmt.Sprintf("%-20s %-12s %s", "TIME", "STATUS", "DESCRIPTION")
+	header := fmt.Sprintf("%-20s %-12s %-30s %s", "TIME", "STATUS", "DESCRIPTION", "SOURCE")
 	b.WriteString(headerStyle.Render(header))
 	b.WriteString("\n")
-	b.WriteString(headerStyle.Render(strings.Repeat("─", 60)))
+	b.WriteString(headerStyle.Render(strings.Repeat("─", 80)))
 	b.WriteString("\n")
 
 	// Reminders
@@ -220,12 +253,16 @@ func (m Model) View() string {
 			line := formatReminder(r)
 			style := getStyle(r, i == m.cursor)
 			b.WriteString(style.Render(line))
+			// Add source file in pale style
+			source := filepath.Base(r.SourceFile)
+			b.WriteString("  ")
+			b.WriteString(sourceStyle.Render(source))
 			b.WriteString("\n")
 		}
 	}
 
 	// Help
-	b.WriteString(helpStyle.Render("↑/↓: navigate  enter: acknowledge  1/2/3: snooze 5m/1h/1d  q: quit"))
+	b.WriteString(helpStyle.Render("↑/↓: navigate  enter: acknowledge  1/2/3: snooze 5m/1h/1d  dd: delete  q: quit"))
 
 	return b.String()
 }
@@ -233,7 +270,12 @@ func (m Model) View() string {
 // formatReminder formats a single reminder as a table row
 func formatReminder(r *reminder.Reminder) string {
 	timeStr := r.DateTime.Format("Jan 2 3:04pm")
-	return fmt.Sprintf("%-20s %-12s %s", timeStr, r.Status.String(), r.Description)
+	// Truncate description if too long
+	desc := r.Description
+	if len(desc) > 28 {
+		desc = desc[:25] + "..."
+	}
+	return fmt.Sprintf("%-20s %-12s %-30s", timeStr, r.Status.String(), desc)
 }
 
 // getStyle returns the appropriate style for a reminder
