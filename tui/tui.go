@@ -2,11 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -15,46 +17,35 @@ import (
 
 // Styles
 var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("205")).
-			MarginBottom(1)
+	appStyle = lipgloss.NewStyle().Padding(1, 2)
 
-	headerStyle = lipgloss.NewStyle().
+	titleStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("205")).
 			Bold(true).
-			Foreground(lipgloss.Color("241"))
+			MarginLeft(2)
 
 	normalStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("252"))
 
-	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252")).
-			Background(lipgloss.Color("237"))
-
 	triggeredStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("196")) // Red
-
-	triggeredSelectedStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("196")).
-				Background(lipgloss.Color("237"))
+			Foreground(lipgloss.Color("196"))
 
 	acknowledgedStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("241")).
 				Strikethrough(true)
 
-	acknowledgedSelectedStyle = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("241")).
-					Strikethrough(true).
-					Background(lipgloss.Color("237"))
-
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			MarginTop(1)
-
 	sourceStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241"))
+
+	selectedItemStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("170")).
+				Bold(true)
+
+	statusBarStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			MarginTop(1).
+			MarginLeft(2)
 )
 
 // TickMsg is sent every second to check for triggered reminders
@@ -66,23 +57,111 @@ type FileUpdateMsg struct {
 	Reminders []*reminder.Reminder
 }
 
+// reminderItem wraps a Reminder to implement list.Item
+type reminderItem struct {
+	reminder *reminder.Reminder
+}
+
+func (i reminderItem) Title() string {
+	return i.reminder.Description
+}
+
+func (i reminderItem) Description() string {
+	return i.reminder.DateTime.Format("Jan 2 3:04pm")
+}
+
+func (i reminderItem) FilterValue() string {
+	return i.reminder.Description
+}
+
+// itemDelegate handles rendering of list items
+type itemDelegate struct{}
+
+func (d itemDelegate) Height() int                             { return 1 }
+func (d itemDelegate) Spacing() int                            { return 0 }
+func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
+
+func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	i, ok := listItem.(reminderItem)
+	if !ok {
+		return
+	}
+
+	r := i.reminder
+	timeStr := r.DateTime.Format("Jan 2 3:04pm")
+	source := filepath.Base(r.SourceFile)
+
+	// Build the line content
+	var statusIcon string
+	var style lipgloss.Style
+
+	switch r.Status {
+	case reminder.Triggered:
+		statusIcon = "🔔"
+		style = triggeredStyle
+	case reminder.Acknowledged:
+		statusIcon = "✓"
+		style = acknowledgedStyle
+	default:
+		statusIcon = "○"
+		style = normalStyle
+	}
+
+	isSelected := index == m.Index()
+	if isSelected {
+		statusIcon = "▸"
+		if r.Status != reminder.Triggered && r.Status != reminder.Acknowledged {
+			style = selectedItemStyle
+		}
+	}
+
+	// Truncate description if needed
+	desc := r.Description
+	if len(desc) > 35 {
+		desc = desc[:32] + "..."
+	}
+
+	line := fmt.Sprintf("%s %-18s %-12s %-36s", statusIcon, timeStr, r.Status.String(), desc)
+	styledLine := style.Render(line)
+	sourcePart := sourceStyle.Render(source)
+
+	fmt.Fprintf(w, "%s  %s", styledLine, sourcePart)
+}
+
 // Model is the Bubble Tea model for the reminder TUI
 type Model struct {
+	list          list.Model
 	reminders     []*reminder.Reminder
-	cursor        int
+	watcherEvents <-chan FileUpdateMsg
+	pendingDelete bool
 	width         int
 	height        int
-	watcherEvents <-chan FileUpdateMsg // Channel for file update events
-	pendingDelete bool                  // True if 'd' was pressed, waiting for second 'd'
 }
 
 // New creates a new TUI model with the given reminders
 func New(reminders []*reminder.Reminder, watcherEvents <-chan FileUpdateMsg) Model {
+	items := remindersToItems(reminders)
+
+	l := list.New(items, itemDelegate{}, 80, 20)
+	l.Title = "Go Remind"
+	l.Styles.Title = titleStyle
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(true)
+	l.SetShowHelp(false) // We'll show our own help
+
 	return Model{
+		list:          l,
 		reminders:     reminders,
-		cursor:        0,
 		watcherEvents: watcherEvents,
 	}
+}
+
+func remindersToItems(reminders []*reminder.Reminder) []list.Item {
+	items := make([]list.Item, len(reminders))
+	for i, r := range reminders {
+		items[i] = reminderItem{reminder: r}
+	}
+	return items
 }
 
 // Init initializes the model and starts the tick timer
@@ -118,22 +197,34 @@ func (m Model) waitForFileUpdate() tea.Cmd {
 	}
 }
 
+// refreshList updates the list items from the current reminders
+func (m *Model) refreshList() {
+	items := remindersToItems(m.reminders)
+	m.list.SetItems(items)
+}
+
+// selectedReminder returns the currently selected reminder, or nil if none
+func (m *Model) selectedReminder() *reminder.Reminder {
+	if len(m.reminders) == 0 {
+		return nil
+	}
+	idx := m.list.Index()
+	if idx < 0 || idx >= len(m.reminders) {
+		return nil
+	}
+	return m.reminders[idx]
+}
+
 // snooze postpones the currently selected triggered reminder by the given duration
 func (m *Model) snooze(duration time.Duration) {
-	if len(m.reminders) == 0 {
-		return
-	}
-	r := m.reminders[m.cursor]
-	if r.Status != reminder.Triggered {
+	r := m.selectedReminder()
+	if r == nil || r.Status != reminder.Triggered {
 		return
 	}
 	r.DateTime = time.Now().Add(duration)
 	r.Status = reminder.Pending
 	reminder.SortByDateTime(m.reminders)
-	// Adjust cursor to follow the snoozed reminder or stay in bounds
-	if m.cursor >= len(m.reminders) {
-		m.cursor = len(m.reminders) - 1
-	}
+	m.refreshList()
 }
 
 // deleteCurrentReminder removes the currently selected reminder from tracking
@@ -141,168 +232,107 @@ func (m *Model) deleteCurrentReminder() {
 	if len(m.reminders) == 0 {
 		return
 	}
-	// Remove the reminder at cursor position
-	m.reminders = append(m.reminders[:m.cursor], m.reminders[m.cursor+1:]...)
-	// Keep cursor in bounds
-	if m.cursor >= len(m.reminders) && len(m.reminders) > 0 {
-		m.cursor = len(m.reminders) - 1
+	idx := m.list.Index()
+	if idx < 0 || idx >= len(m.reminders) {
+		return
 	}
+	m.reminders = append(m.reminders[:idx], m.reminders[idx+1:]...)
+	m.refreshList()
 }
 
 // Update handles messages and updates the model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Don't handle keys if filtering
+		if m.list.FilterState() == list.Filtering {
+			var cmd tea.Cmd
+			m.list, cmd = m.list.Update(msg)
+			return m, cmd
+		}
+
 		// Handle 'dd' for delete (vim-style)
 		if msg.String() == "d" {
 			if m.pendingDelete {
-				// Second 'd' - perform delete
 				m.deleteCurrentReminder()
 				m.pendingDelete = false
 			} else {
-				// First 'd' - wait for second
 				m.pendingDelete = true
 			}
 			return m, nil
 		}
-		// Any other key cancels pending delete
 		m.pendingDelete = false
 
 		switch {
 		case key.Matches(msg, keys.Quit):
 			return m, tea.Quit
 
-		case key.Matches(msg, keys.Up):
-			if m.cursor > 0 {
-				m.cursor--
-			}
-
-		case key.Matches(msg, keys.Down):
-			if m.cursor < len(m.reminders)-1 {
-				m.cursor++
-			}
-
 		case key.Matches(msg, keys.Acknowledge):
-			if len(m.reminders) > 0 {
-				r := m.reminders[m.cursor]
-				if r.Status == reminder.Pending || r.Status == reminder.Triggered {
-					r.Status = reminder.Acknowledged
-				}
+			r := m.selectedReminder()
+			if r != nil && (r.Status == reminder.Pending || r.Status == reminder.Triggered) {
+				r.Status = reminder.Acknowledged
+				m.refreshList()
 			}
+			return m, nil
 
 		case key.Matches(msg, keys.Snooze5m):
 			m.snooze(5 * time.Minute)
+			return m, nil
 
 		case key.Matches(msg, keys.Snooze1h):
 			m.snooze(1 * time.Hour)
+			return m, nil
 
 		case key.Matches(msg, keys.Snooze1d):
 			m.snooze(24 * time.Hour)
+			return m, nil
 		}
 
 	case TickMsg:
 		// Check for newly triggered reminders
 		now := time.Now()
+		changed := false
 		for _, r := range m.reminders {
 			if r.Status == reminder.Pending && now.After(r.DateTime) {
 				r.Status = reminder.Triggered
+				changed = true
 			}
+		}
+		if changed {
+			m.refreshList()
 		}
 		return m, tickCmd()
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.list.SetSize(msg.Width-4, msg.Height-6)
 
 	case FileUpdateMsg:
-		// Merge new reminders with existing ones (deduplication)
 		m.reminders = reminder.MergeFromFile(m.reminders, msg.FilePath, msg.Reminders)
 		reminder.SortByDateTime(m.reminders)
-		// Keep cursor in bounds
-		if m.cursor >= len(m.reminders) && len(m.reminders) > 0 {
-			m.cursor = len(m.reminders) - 1
-		}
-		// Continue listening for more updates
+		m.refreshList()
 		return m, m.waitForFileUpdate()
 	}
 
-	return m, nil
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
 }
 
 // View renders the UI
 func (m Model) View() string {
 	var b strings.Builder
 
-	// Title
-	b.WriteString(titleStyle.Render("Go Remind"))
-	b.WriteString("\n\n")
-
-	// Header
-	header := fmt.Sprintf("%-20s %-12s %-30s %s", "TIME", "STATUS", "DESCRIPTION", "SOURCE")
-	b.WriteString(headerStyle.Render(header))
+	b.WriteString(m.list.View())
 	b.WriteString("\n")
-	b.WriteString(headerStyle.Render(strings.Repeat("─", 80)))
-	b.WriteString("\n")
+	b.WriteString(statusBarStyle.Render("enter: done  1/2/3: snooze 5m/1h/1d  dd: delete  /: filter  q: quit"))
 
-	// Reminders
-	if len(m.reminders) == 0 {
-		b.WriteString(normalStyle.Render("No reminders found."))
-		b.WriteString("\n")
-	} else {
-		for i, r := range m.reminders {
-			line := formatReminder(r)
-			style := getStyle(r, i == m.cursor)
-			b.WriteString(style.Render(line))
-			// Add source file in pale style
-			source := filepath.Base(r.SourceFile)
-			b.WriteString("  ")
-			b.WriteString(sourceStyle.Render(source))
-			b.WriteString("\n")
-		}
-	}
-
-	// Help
-	b.WriteString(helpStyle.Render("↑/↓: navigate  enter: acknowledge  1/2/3: snooze 5m/1h/1d  dd: delete  q: quit"))
-
-	return b.String()
-}
-
-// formatReminder formats a single reminder as a table row
-func formatReminder(r *reminder.Reminder) string {
-	timeStr := r.DateTime.Format("Jan 2 3:04pm")
-	// Truncate description if too long
-	desc := r.Description
-	if len(desc) > 28 {
-		desc = desc[:25] + "..."
-	}
-	return fmt.Sprintf("%-20s %-12s %-30s", timeStr, r.Status.String(), desc)
-}
-
-// getStyle returns the appropriate style for a reminder
-func getStyle(r *reminder.Reminder, selected bool) lipgloss.Style {
-	switch r.Status {
-	case reminder.Triggered:
-		if selected {
-			return triggeredSelectedStyle
-		}
-		return triggeredStyle
-	case reminder.Acknowledged:
-		if selected {
-			return acknowledgedSelectedStyle
-		}
-		return acknowledgedStyle
-	default:
-		if selected {
-			return selectedStyle
-		}
-		return normalStyle
-	}
+	return appStyle.Render(b.String())
 }
 
 // Key bindings
 type keyMap struct {
-	Up          key.Binding
-	Down        key.Binding
 	Acknowledge key.Binding
 	Snooze5m    key.Binding
 	Snooze1h    key.Binding
@@ -311,14 +341,6 @@ type keyMap struct {
 }
 
 var keys = keyMap{
-	Up: key.NewBinding(
-		key.WithKeys("up", "k"),
-		key.WithHelp("↑/k", "up"),
-	),
-	Down: key.NewBinding(
-		key.WithKeys("down", "j"),
-		key.WithHelp("↓/j", "down"),
-	),
 	Acknowledge: key.NewBinding(
 		key.WithKeys("enter", " "),
 		key.WithHelp("enter/space", "acknowledge"),
