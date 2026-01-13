@@ -425,8 +425,8 @@ func (m *Model) addReminder(input string) error {
 
 	now := time.Now()
 
-	// Try parsing increasing numbers of words as the datetime
-	for numDateWords := 1; numDateWords < len(words); numDateWords++ {
+	// Try parsing from longest to shortest datetime prefix
+	for numDateWords := len(words) - 1; numDateWords >= 1; numDateWords-- {
 		dateStr := strings.Join(words[:numDateWords], " ")
 		descStr := strings.Join(words[numDateWords:], " ")
 

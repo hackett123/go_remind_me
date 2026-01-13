@@ -57,6 +57,17 @@ var relativePattern = regexp.MustCompile(`^\+(\d+[dhms])+$`)
 // inPattern matches "in X days/hours/minutes"
 var inPattern = regexp.MustCompile(`^in\s+(\d+)\s*(d|day|days|h|hour|hours|m|min|mins|minute|minutes)$`)
 
+// weekdays for parsing
+var weekdays = map[string]time.Weekday{
+	"sunday": time.Sunday, "sun": time.Sunday,
+	"monday": time.Monday, "mon": time.Monday,
+	"tuesday": time.Tuesday, "tue": time.Tuesday, "tues": time.Tuesday,
+	"wednesday": time.Wednesday, "wed": time.Wednesday,
+	"thursday": time.Thursday, "thu": time.Thursday, "thurs": time.Thursday,
+	"friday": time.Friday, "fri": time.Friday,
+	"saturday": time.Saturday, "sat": time.Saturday,
+}
+
 // Parse attempts to parse a datetime string using multiple formats.
 // relativeTo is used as the base time for relative times (e.g., +2h).
 // Returns the parsed time or an error if no format matched.
@@ -72,6 +83,11 @@ func Parse(input string, relativeTo time.Time) (time.Time, error) {
 	// Try "in X days/hours" pattern
 	if match := inPattern.FindStringSubmatch(lower); match != nil {
 		return parseInDuration(match, relativeTo)
+	}
+
+	// Try weekday parsing
+	if t, ok := parseWeekday(lower, relativeTo); ok {
+		return t, nil
 	}
 
 	// Try relative time first
@@ -184,4 +200,48 @@ func parseInDuration(match []string, relativeTo time.Time) (time.Time, error) {
 	}
 
 	return time.Time{}, fmt.Errorf("unknown unit: %s", unit)
+}
+
+// parseWeekday handles "friday" or "friday 10am" style inputs
+func parseWeekday(input string, relativeTo time.Time) (time.Time, bool) {
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return time.Time{}, false
+	}
+
+	targetDay, ok := weekdays[parts[0]]
+	if !ok {
+		return time.Time{}, false
+	}
+
+	// Calculate days until next occurrence
+	currentDay := relativeTo.Weekday()
+	daysUntil := int(targetDay) - int(currentDay)
+	if daysUntil <= 0 {
+		daysUntil += 7
+	}
+
+	targetDate := relativeTo.AddDate(0, 0, daysUntil)
+
+	// Default to 9am
+	hour, min := 9, 0
+
+	// If there are more parts, they must form a valid time
+	if len(parts) > 1 {
+		timeStr := strings.Join(parts[1:], " ")
+		parsed := false
+		for _, format := range timeOnlyFormats {
+			if t, err := time.ParseInLocation(format, timeStr, time.Local); err == nil {
+				hour, min = t.Hour(), t.Minute()
+				parsed = true
+				break
+			}
+		}
+		if !parsed {
+			return time.Time{}, false
+		}
+	}
+
+	return time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(),
+		hour, min, 0, 0, time.Local), true
 }

@@ -67,9 +67,9 @@ func parseReminderContent(content string, relativeTo time.Time) (*reminder.Remin
 		return nil, fmt.Errorf("reminder must have both datetime and description")
 	}
 
-	// Try parsing increasing numbers of words as the datetime
-	// Start with 1 word, go up to len(words)-1 (must leave at least 1 word for description)
-	for numDateWords := 1; numDateWords < len(words); numDateWords++ {
+	// Try parsing from longest to shortest datetime prefix
+	// This ensures "friday 10am" is tried before "friday"
+	for numDateWords := len(words) - 1; numDateWords >= 1; numDateWords-- {
 		dateStr := strings.Join(words[:numDateWords], " ")
 		descStr := strings.Join(words[numDateWords:], " ")
 
