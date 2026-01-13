@@ -87,6 +87,24 @@ func tickCmd() tea.Cmd {
 	})
 }
 
+// snooze postpones the currently selected triggered reminder by the given duration
+func (m *Model) snooze(duration time.Duration) {
+	if len(m.reminders) == 0 {
+		return
+	}
+	r := m.reminders[m.cursor]
+	if r.Status != reminder.Triggered {
+		return
+	}
+	r.DateTime = time.Now().Add(duration)
+	r.Status = reminder.Pending
+	reminder.SortByDateTime(m.reminders)
+	// Adjust cursor to follow the snoozed reminder or stay in bounds
+	if m.cursor >= len(m.reminders) {
+		m.cursor = len(m.reminders) - 1
+	}
+}
+
 // Update handles messages and updates the model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -112,6 +130,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					r.Status = reminder.Acknowledged
 				}
 			}
+
+		case key.Matches(msg, keys.Snooze5m):
+			m.snooze(5 * time.Minute)
+
+		case key.Matches(msg, keys.Snooze1h):
+			m.snooze(1 * time.Hour)
+
+		case key.Matches(msg, keys.Snooze1d):
+			m.snooze(24 * time.Hour)
 		}
 
 	case TickMsg:
@@ -161,7 +188,7 @@ func (m Model) View() string {
 	}
 
 	// Help
-	b.WriteString(helpStyle.Render("↑/↓: navigate  enter: acknowledge  q: quit"))
+	b.WriteString(helpStyle.Render("↑/↓: navigate  enter: acknowledge  1/2/3: snooze 5m/1h/1d  q: quit"))
 
 	return b.String()
 }
@@ -198,6 +225,9 @@ type keyMap struct {
 	Up          key.Binding
 	Down        key.Binding
 	Acknowledge key.Binding
+	Snooze5m    key.Binding
+	Snooze1h    key.Binding
+	Snooze1d    key.Binding
 	Quit        key.Binding
 }
 
@@ -213,6 +243,18 @@ var keys = keyMap{
 	Acknowledge: key.NewBinding(
 		key.WithKeys("enter", " "),
 		key.WithHelp("enter/space", "acknowledge"),
+	),
+	Snooze5m: key.NewBinding(
+		key.WithKeys("1"),
+		key.WithHelp("1", "snooze 5m"),
+	),
+	Snooze1h: key.NewBinding(
+		key.WithKeys("2"),
+		key.WithHelp("2", "snooze 1h"),
+	),
+	Snooze1d: key.NewBinding(
+		key.WithKeys("3"),
+		key.WithHelp("3", "snooze 1d"),
 	),
 	Quit: key.NewBinding(
 		key.WithKeys("q", "ctrl+c"),
