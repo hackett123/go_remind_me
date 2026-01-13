@@ -254,6 +254,9 @@ type Model struct {
 
 // New creates a new TUI model with the given reminders
 func New(reminders []*reminder.Reminder, watcherEvents <-chan FileUpdateMsg) Model {
+	// Apply default theme
+	themes[0].applyStyles()
+
 	items := remindersToItems(reminders)
 
 	l := list.New(items, itemDelegate{}, 80, 20)
