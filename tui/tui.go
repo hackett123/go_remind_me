@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -52,11 +53,6 @@ var (
 	selectedItemStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("170")).
 				Bold(true)
-
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			MarginTop(1).
-			MarginLeft(2)
 
 	// Input box styles
 	inputBoxStyle = lipgloss.NewStyle().
@@ -169,6 +165,10 @@ type Model struct {
 	filterInput textinput.Model
 	addInput    textinput.Model
 	inputError  string
+
+	// Help
+	help help.Model
+	keys keyMap
 }
 
 // New creates a new TUI model with the given reminders
@@ -194,6 +194,8 @@ func New(reminders []*reminder.Reminder, watcherEvents <-chan FileUpdateMsg) Mod
 	ai.CharLimit = 200
 	ai.Width = 50
 
+	h := help.New()
+
 	return Model{
 		list:          l,
 		reminders:     reminders,
@@ -201,6 +203,8 @@ func New(reminders []*reminder.Reminder, watcherEvents <-chan FileUpdateMsg) Mod
 		mode:          modeNormal,
 		filterInput:   fi,
 		addInput:      ai,
+		help:          h,
+		keys:          keys,
 	}
 }
 
@@ -375,6 +379,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.help.Width = msg.Width
 		listHeight := msg.Height - 10 // Leave room for input boxes
 		if listHeight < 5 {
 			listHeight = 5
@@ -421,6 +426,10 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.addInput.Focus()
 		m.inputError = ""
 		return m, textinput.Blink
+
+	case key.Matches(msg, keys.Help):
+		m.help.ShowAll = !m.help.ShowAll
+		return m, nil
 
 	case key.Matches(msg, keys.Acknowledge):
 		r := m.selectedReminder()
@@ -550,7 +559,7 @@ func (m Model) View() string {
 		}
 
 		b.WriteString("\n")
-		b.WriteString(statusBarStyle.Render("enter: done  u: unack  1/2/3: snooze  dd: delete  /: filter  n: new  q: quit"))
+		b.WriteString(m.help.View(m.keys))
 	}
 
 	return appStyle.Render(b.String())
@@ -558,24 +567,54 @@ func (m Model) View() string {
 
 // Key bindings
 type keyMap struct {
+	Up            key.Binding
+	Down          key.Binding
 	Acknowledge   key.Binding
 	Unacknowledge key.Binding
+	Delete        key.Binding
 	Snooze5m      key.Binding
 	Snooze1h      key.Binding
 	Snooze1d      key.Binding
 	Filter        key.Binding
 	Add           key.Binding
+	Help          key.Binding
 	Quit          key.Binding
 }
 
+// ShortHelp returns key bindings for the short help view
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Acknowledge, k.Filter, k.Add, k.Help, k.Quit}
+}
+
+// FullHelp returns key bindings for the full help view
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.Acknowledge, k.Unacknowledge},
+		{k.Snooze5m, k.Snooze1h, k.Snooze1d, k.Delete},
+		{k.Filter, k.Add, k.Help, k.Quit},
+	}
+}
+
 var keys = keyMap{
+	Up: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "up"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "down"),
+	),
 	Acknowledge: key.NewBinding(
 		key.WithKeys("enter", " "),
-		key.WithHelp("enter/space", "acknowledge"),
+		key.WithHelp("enter", "done"),
 	),
 	Unacknowledge: key.NewBinding(
 		key.WithKeys("u"),
-		key.WithHelp("u", "unacknowledge"),
+		key.WithHelp("u", "unack"),
+	),
+	Delete: key.NewBinding(
+		key.WithKeys("d"),
+		key.WithHelp("dd", "delete"),
 	),
 	Snooze5m: key.NewBinding(
 		key.WithKeys("1"),
@@ -595,7 +634,11 @@ var keys = keyMap{
 	),
 	Add: key.NewBinding(
 		key.WithKeys("n"),
-		key.WithHelp("n", "new reminder"),
+		key.WithHelp("n", "new"),
+	),
+	Help: key.NewBinding(
+		key.WithKeys("?"),
+		key.WithHelp("?", "help"),
 	),
 	Quit: key.NewBinding(
 		key.WithKeys("q", "ctrl+c"),
