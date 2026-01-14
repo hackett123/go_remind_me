@@ -1,30 +1,17 @@
 package tui
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"go_remind/reminder"
-	"go_remind/state"
 )
 
-func TestMain(m *testing.M) {
-	// Use a temp file for state during tests
-	tmpDir, err := os.MkdirTemp("", "tui_test")
-	if err != nil {
-		panic(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	state.OverridePath = filepath.Join(tmpDir, "test_state.json")
-	os.Exit(m.Run())
-}
-
 // createTestModel creates a properly initialized Model for testing
-func createTestModel(reminders []*reminder.Reminder) *Model {
-	m := New(reminders, nil)
+// We pass nil for store since tests don't need persistence
+func createTestModel(t *testing.T, reminders []*reminder.Reminder) *Model {
+	t.Helper()
+	m := New(reminders, nil, nil)
 	return &m
 }
 
@@ -158,7 +145,7 @@ func TestUpdateReminder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a properly initialized model with the reminder
-			m := createTestModel([]*reminder.Reminder{tt.initialReminder})
+			m := createTestModel(t, []*reminder.Reminder{tt.initialReminder})
 
 			err := m.updateReminder(tt.initialReminder, tt.input)
 
@@ -249,7 +236,7 @@ func TestUpdateReminderStatusTransitions(t *testing.T) {
 				Status:      tt.initialStatus,
 			}
 
-			m := createTestModel([]*reminder.Reminder{r})
+			m := createTestModel(t, []*reminder.Reminder{r})
 
 			var input string
 			if tt.newTimeIsPast {
@@ -288,7 +275,7 @@ func TestEditPrefillFormat(t *testing.T) {
 	}
 
 	// Verify this format can be parsed back
-	m := createTestModel([]*reminder.Reminder{r})
+	m := createTestModel(t, []*reminder.Reminder{r})
 
 	err := m.updateReminder(r, prefill)
 	if err != nil {

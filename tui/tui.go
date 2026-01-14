@@ -228,6 +228,7 @@ type Model struct {
 	list          list.Model
 	reminders     []*reminder.Reminder
 	watcherEvents <-chan FileUpdateMsg
+	store         *state.Store
 	pendingDelete bool
 	width         int
 	height        int
@@ -254,7 +255,7 @@ type Model struct {
 }
 
 // New creates a new TUI model with the given reminders
-func New(reminders []*reminder.Reminder, watcherEvents <-chan FileUpdateMsg) Model {
+func New(reminders []*reminder.Reminder, watcherEvents <-chan FileUpdateMsg, store *state.Store) Model {
 	// Apply default theme
 	themes[0].applyStyles()
 
@@ -285,6 +286,7 @@ func New(reminders []*reminder.Reminder, watcherEvents <-chan FileUpdateMsg) Mod
 		list:          l,
 		reminders:     reminders,
 		watcherEvents: watcherEvents,
+		store:         store,
 		mode:          modeNormal,
 		filterInput:   fi,
 		addInput:      ai,
@@ -335,9 +337,12 @@ func (m Model) waitForFileUpdate() tea.Cmd {
 
 // saveState persists the current reminders to disk
 func (m *Model) saveState() {
+	if m.store == nil {
+		return
+	}
 	// Save in background to avoid blocking UI
 	go func() {
-		_ = state.Save(m.reminders) // Ignore errors for now
+		_ = m.store.Save(m.reminders) // Ignore errors for now
 	}()
 }
 

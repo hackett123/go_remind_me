@@ -17,13 +17,21 @@ func main() {
 	var reminders []*reminder.Reminder
 	var tuiEvents chan tui.FileUpdateMsg
 
-	// Load saved state first
-	savedReminders, err := state.Load()
+	// Create state store
+	store, err := state.NewDefaultStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not load state: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: could not create state store: %v\n", err)
 	}
-	if savedReminders != nil {
-		reminders = savedReminders
+
+	// Load saved state first
+	if store != nil {
+		savedReminders, err := store.Load()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not load state: %v\n", err)
+		}
+		if savedReminders != nil {
+			reminders = savedReminders
+		}
 	}
 
 	if len(os.Args) >= 2 {
@@ -89,7 +97,7 @@ func main() {
 	reminder.SortByDateTime(reminders)
 
 	// Run the TUI
-	model := tui.New(reminders, tuiEvents)
+	model := tui.New(reminders, tuiEvents, store)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

@@ -11,8 +11,37 @@ import (
 
 const stateFileName = "reminders_state.json"
 
-// OverridePath allows overriding the state file path (used for testing)
-var OverridePath string
+// Store handles persistence of reminders to disk
+type Store struct {
+	path string
+}
+
+// NewStore creates a Store with a custom path
+func NewStore(path string) *Store {
+	return &Store{path: path}
+}
+
+// NewDefaultStore creates a Store using the default path (~/.go_remind/reminders_state.json)
+func NewDefaultStore() (*Store, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	stateDir := filepath.Join(homeDir, ".go_remind")
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		return nil, err
+	}
+
+	return &Store{
+		path: filepath.Join(stateDir, stateFileName),
+	}, nil
+}
+
+// Path returns the store's file path
+func (s *Store) Path() string {
+	return s.path
+}
 
 // savedReminder is the JSON-serializable form of a reminder
 type savedReminder struct {
@@ -22,33 +51,9 @@ type savedReminder struct {
 	Status      int       `json:"status"`
 }
 
-// GetStatePath returns the path to the state file
-func GetStatePath() (string, error) {
-	if OverridePath != "" {
-		return OverridePath, nil
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-
-	stateDir := filepath.Join(homeDir, ".go_remind")
-	if err := os.MkdirAll(stateDir, 0755); err != nil {
-		return "", err
-	}
-
-	return filepath.Join(stateDir, stateFileName), nil
-}
-
 // Load reads reminders from the state file
-func Load() ([]*reminder.Reminder, error) {
-	path, err := GetStatePath()
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := os.ReadFile(path)
+func (s *Store) Load() ([]*reminder.Reminder, error) {
+	data, err := os.ReadFile(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil // No state file yet, that's OK
@@ -62,12 +67,12 @@ func Load() ([]*reminder.Reminder, error) {
 	}
 
 	reminders := make([]*reminder.Reminder, len(saved))
-	for i, s := range saved {
+	for i, sr := range saved {
 		reminders[i] = &reminder.Reminder{
-			DateTime:    s.DateTime,
-			Description: s.Description,
-			SourceFile:  s.SourceFile,
-			Status:      reminder.Status(s.Status),
+			DateTime:    sr.DateTime,
+			Description: sr.Description,
+			SourceFile:  sr.SourceFile,
+			Status:      reminder.Status(sr.Status),
 		}
 	}
 
@@ -75,12 +80,7 @@ func Load() ([]*reminder.Reminder, error) {
 }
 
 // Save writes reminders to the state file
-func Save(reminders []*reminder.Reminder) error {
-	path, err := GetStatePath()
-	if err != nil {
-		return err
-	}
-
+func (s *Store) Save(reminders []*reminder.Reminder) error {
 	saved := make([]savedReminder, len(reminders))
 	for i, r := range reminders {
 		saved[i] = savedReminder{
@@ -96,5 +96,5 @@ func Save(reminders []*reminder.Reminder) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(s.path, data, 0644)
 }
