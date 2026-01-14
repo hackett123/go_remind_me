@@ -237,10 +237,11 @@ type Model struct {
 	gridColumns int
 
 	// Input handling
-	mode        inputMode
-	filterInput textinput.Model
-	addInput    textinput.Model
-	inputError  string
+	mode             inputMode
+	filterInput      textinput.Model
+	addInput         textinput.Model
+	inputError       string
+	editingReminder  *reminder.Reminder // non-nil when editing an existing reminder
 
 	// Theme picker
 	themeIndex    int
@@ -449,6 +450,49 @@ func (m *Model) addReminder(input string) error {
 	return fmt.Errorf("couldn't parse time from input")
 }
 
+// updateReminder parses the input and updates an existing reminder
+func (m *Model) updateReminder(r *reminder.Reminder, input string) error {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return fmt.Errorf("empty input")
+	}
+
+	words := strings.Fields(input)
+	if len(words) < 2 {
+		return fmt.Errorf("need both time and description (e.g., '+1h Call mom')")
+	}
+
+	now := time.Now()
+
+	// Try parsing from longest to shortest datetime prefix
+	for numDateWords := len(words) - 1; numDateWords >= 1; numDateWords-- {
+		dateStr := strings.Join(words[:numDateWords], " ")
+		descStr := strings.Join(words[numDateWords:], " ")
+
+		parsedTime, err := datetime.Parse(dateStr, now)
+		if err == nil {
+			r.DateTime = parsedTime
+			r.Description = descStr
+			// Update status based on new time
+			if now.After(parsedTime) {
+				if r.Status != reminder.Acknowledged {
+					r.Status = reminder.Triggered
+				}
+			} else {
+				if r.Status == reminder.Triggered {
+					r.Status = reminder.Pending
+				}
+			}
+			reminder.SortByDateTime(m.reminders)
+			m.refreshList()
+			m.saveState()
+			return nil
+		}
+	}
+
+	return fmt.Errorf("couldn't parse time from input")
+}
+
 // Update handles messages and updates the model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -546,6 +590,22 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeAdd
 		m.addInput.Reset()
 		m.addInput.Focus()
+		m.inputError = ""
+		m.editingReminder = nil
+		return m, textinput.Blink
+
+	case key.Matches(msg, keys.Edit):
+		r := m.selectedReminder()
+		if r == nil {
+			return m, nil
+		}
+		m.mode = modeAdd
+		m.editingReminder = r
+		// Format: yyyy-mm-dd hh:mm description
+		prefill := r.DateTime.Format("2006-01-02 15:04") + " " + r.Description
+		m.addInput.SetValue(prefill)
+		m.addInput.Focus()
+		m.addInput.CursorEnd()
 		m.inputError = ""
 		return m, textinput.Blink
 
@@ -654,9 +714,15 @@ func (m Model) updateAddMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.addInput.Blur()
 		m.addInput.Reset()
 		m.inputError = ""
+		m.editingReminder = nil
 		return m, nil
 	case tea.KeyEnter:
-		err := m.addReminder(m.addInput.Value())
+		var err error
+		if m.editingReminder != nil {
+			err = m.updateReminder(m.editingReminder, m.addInput.Value())
+		} else {
+			err = m.addReminder(m.addInput.Value())
+		}
 		if err != nil {
 			m.inputError = err.Error()
 			return m, nil
@@ -665,6 +731,7 @@ func (m Model) updateAddMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.addInput.Blur()
 		m.addInput.Reset()
 		m.inputError = ""
+		m.editingReminder = nil
 		return m, nil
 	}
 
@@ -781,13 +848,18 @@ func (m Model) View() string {
 		b.WriteString(box)
 
 	case modeAdd:
-		label := inputLabelStyle.Render("➕ New Reminder: ")
+		var label string
+		if m.editingReminder != nil {
+			label = inputLabelStyle.Render("✏️  Edit Reminder: ")
+		} else {
+			label = inputLabelStyle.Render("➕ New Reminder: ")
+		}
 		input := m.addInput.View()
 		box := inputBoxStyle.Render(label + input)
 		b.WriteString("\n")
 		b.WriteString(box)
 
-		hint := inputHintStyle.Render("  Format: <time> <description>  •  Examples: +1h Call mom  |  Jan 15 2:30pm Meeting")
+		hint := inputHintStyle.Render("  Format: <time> <description>  •  Examples: +1h Call mom  |  2025-01-15 14:30 Meeting")
 		b.WriteString("\n")
 		b.WriteString(hint)
 
@@ -930,6 +1002,7 @@ type keyMap struct {
 	Snooze1d      key.Binding
 	Filter        key.Binding
 	Add           key.Binding
+	Edit          key.Binding
 	Theme         key.Binding
 	Layout        key.Binding
 	Help          key.Binding
@@ -946,7 +1019,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Acknowledge, k.Unacknowledge},
 		{k.Snooze5m, k.Snooze1h, k.Snooze1d, k.Delete},
-		{k.Filter, k.Add, k.Theme, k.Layout, k.Help, k.Quit},
+		{k.Filter, k.Add, k.Edit, k.Theme, k.Layout, k.Help, k.Quit},
 	}
 }
 
@@ -990,6 +1063,10 @@ var keys = keyMap{
 	Add: key.NewBinding(
 		key.WithKeys("n"),
 		key.WithHelp("n", "new"),
+	),
+	Edit: key.NewBinding(
+		key.WithKeys("e"),
+		key.WithHelp("e", "edit"),
 	),
 	Theme: key.NewBinding(
 		key.WithKeys("t"),

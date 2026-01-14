@@ -67,6 +67,7 @@ Go Remind supports flexible datetime parsing:
 | `Enter/Space` | Acknowledge (mark done) |
 | `u` | Unacknowledge (reopen) |
 | `dd` | Delete reminder |
+| `e` | Edit reminder |
 | `1` | Snooze 5 minutes |
 | `2` | Snooze 1 hour |
 | `3` | Snooze 1 day |

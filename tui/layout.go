@@ -9,4 +9,4 @@ const (
 
 var layoutNames = []string{"Compact", "Card"}
 
-var currentLayout LayoutMode
+var currentLayout = LayoutCard
