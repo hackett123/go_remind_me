@@ -10,32 +10,6 @@ import (
 )
 
 func TestWatcherFileUpdates(t *testing.T) {
-	// Create temporary directory for test files
-	tempDir, err := os.MkdirTemp("", "watcher_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create watcher
-	w, err := New()
-	if err != nil {
-		t.Fatalf("Failed to create watcher: %v", err)
-	}
-	defer w.Stop()
-
-	// Start watcher
-	w.Start()
-
-	// Test file path
-	testFile := filepath.Join(tempDir, "test.md")
-
-	// Watch the directory
-	err = w.WatchDirectory(tempDir)
-	if err != nil {
-		t.Fatalf("Failed to watch directory: %v", err)
-	}
-
 	tests := []struct {
 		name     string
 		content  string
@@ -84,8 +58,29 @@ Empty line above
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Write test content to file
-			err := os.WriteFile(testFile, []byte(tt.content), 0644)
+			// Create a fresh temp directory and watcher for each test
+			tempDir, err := os.MkdirTemp("", "watcher_test")
+			if err != nil {
+				t.Fatalf("Failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tempDir)
+
+			w, err := New()
+			if err != nil {
+				t.Fatalf("Failed to create watcher: %v", err)
+			}
+			defer w.Stop()
+
+			w.Start()
+
+			err = w.WatchDirectory(tempDir)
+			if err != nil {
+				t.Fatalf("Failed to watch directory: %v", err)
+			}
+
+			// Create the test file
+			testFile := filepath.Join(tempDir, "test.md")
+			err = os.WriteFile(testFile, []byte(tt.content), 0644)
 			if err != nil {
 				t.Fatalf("Failed to write test file: %v", err)
 			}
@@ -299,12 +294,15 @@ func TestWatcherIgnoresNonMarkdownFiles(t *testing.T) {
 		t.Fatalf("Failed to watch directory: %v", err)
 	}
 
-	// Create a non-markdown file
+	// Create a non-markdown file first
 	txtFile := filepath.Join(tempDir, "test.txt")
 	err = os.WriteFile(txtFile, []byte("This has [remind_me +1h Should be ignored] but it's not markdown."), 0644)
 	if err != nil {
 		t.Fatalf("Failed to write txt file: %v", err)
 	}
+
+	// Small delay to ensure txt file event is processed (and ignored) first
+	time.Sleep(100 * time.Millisecond)
 
 	// Create a markdown file
 	mdFile := filepath.Join(tempDir, "test.md")
@@ -313,28 +311,36 @@ func TestWatcherIgnoresNonMarkdownFiles(t *testing.T) {
 		t.Fatalf("Failed to write md file: %v", err)
 	}
 
-	// Should only get one event (for the .md file)
-	select {
-	case event := <-w.Events:
-		if event.Err != nil {
-			t.Fatalf("Watcher error: %v", event.Err)
-		}
-		if len(event.Reminders) != 1 {
-			t.Errorf("Expected 1 reminder, got %d", len(event.Reminders))
-		}
-		if event.FilePath != mdFile {
-			t.Errorf("Expected file path %s, got %s", mdFile, event.FilePath)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Timeout waiting for markdown file event")
-	}
+	// Collect events - file creation may generate multiple events (CREATE + WRITE)
+	// We just want to verify all events are for the .md file, not .txt
+	gotMdEvent := false
+	timeout := time.After(2 * time.Second)
 
-	// Make sure no additional events come through
-	select {
-	case event := <-w.Events:
-		t.Errorf("Unexpected additional event: %+v", event)
-	case <-time.After(500 * time.Millisecond):
-		// Good, no additional events
+	for {
+		select {
+		case event := <-w.Events:
+			if event.Err != nil {
+				t.Fatalf("Watcher error: %v", event.Err)
+			}
+			// Verify all events are for .md file, not .txt
+			if event.FilePath == txtFile {
+				t.Errorf("Got event for .txt file, should be ignored: %+v", event)
+			}
+			if event.FilePath == mdFile {
+				gotMdEvent = true
+				if len(event.Reminders) != 1 {
+					t.Errorf("Expected 1 reminder, got %d", len(event.Reminders))
+				}
+			}
+		case <-time.After(300 * time.Millisecond):
+			// No more events after short wait
+			if !gotMdEvent {
+				t.Fatal("Never got event for markdown file")
+			}
+			return
+		case <-timeout:
+			t.Fatal("Timeout waiting for events")
+		}
 	}
 }
 

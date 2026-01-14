@@ -11,6 +11,9 @@ import (
 
 const stateFileName = "reminders_state.json"
 
+// OverridePath allows overriding the state file path (used for testing)
+var OverridePath string
+
 // savedReminder is the JSON-serializable form of a reminder
 type savedReminder struct {
 	DateTime    time.Time `json:"datetime"`
@@ -21,6 +24,10 @@ type savedReminder struct {
 
 // GetStatePath returns the path to the state file
 func GetStatePath() (string, error) {
+	if OverridePath != "" {
+		return OverridePath, nil
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err

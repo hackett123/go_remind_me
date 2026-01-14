@@ -305,7 +305,6 @@ func remindersToItems(reminders []*reminder.Reminder) []list.Item {
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		tickCmd(),
-		tea.EnterAltScreen,
 	}
 	if m.watcherEvents != nil {
 		cmds = append(cmds, m.waitForFileUpdate())
@@ -511,10 +510,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TickMsg:
 		// Check for newly triggered reminders
-		now := time.Now()
 		changed := false
 		for _, r := range m.reminders {
-			if r.Status == reminder.Pending && now.After(r.DateTime) {
+			if r.Status == reminder.Pending && r.IsDue() {
 				r.Status = reminder.Triggered
 				changed = true
 			}
@@ -625,7 +623,7 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Unacknowledge):
 		r := m.selectedReminder()
 		if r != nil && r.Status == reminder.Acknowledged {
-			if time.Now().After(r.DateTime) {
+			if r.IsDue() {
 				r.Status = reminder.Triggered
 			} else {
 				r.Status = reminder.Pending
