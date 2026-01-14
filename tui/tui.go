@@ -27,6 +27,7 @@ const (
 	modeFilter
 	modeAdd
 	modeTheme
+	modeDetail
 )
 
 // Styles
@@ -248,6 +249,10 @@ type Model struct {
 	themeIndex    int
 	previewTheme  int
 	originalTheme int
+
+	// Detail view
+	detailReminder *reminder.Reminder
+	detailScroll   int
 
 	// Help
 	help help.Model
@@ -509,6 +514,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAddMode(msg)
 		case modeTheme:
 			return m.updateThemeMode(msg)
+		case modeDetail:
+			return m.updateDetailMode(msg)
 		default:
 			return m.updateNormalMode(msg)
 		}
@@ -649,6 +656,15 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Snooze1d):
 		m.snooze(24 * time.Hour)
 		return m, nil
+
+	case msg.String() == "K":
+		r := m.selectedReminder()
+		if r != nil {
+			m.mode = modeDetail
+			m.detailReminder = r
+			m.detailScroll = 0
+		}
+		return m, nil
 	}
 
 	// Handle grid navigation in card mode
@@ -785,6 +801,103 @@ func (m Model) updateThemeMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) updateDetailMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle 'dd' for delete
+	if msg.String() == "d" {
+		if m.pendingDelete {
+			m.deleteCurrentReminder()
+			m.pendingDelete = false
+			m.mode = modeNormal
+			m.detailReminder = nil
+			m.detailScroll = 0
+			return m, nil
+		}
+		m.pendingDelete = true
+		return m, nil
+	}
+	m.pendingDelete = false
+
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.mode = modeNormal
+		m.detailReminder = nil
+		m.detailScroll = 0
+		return m, nil
+	case tea.KeyUp:
+		if m.detailScroll > 0 {
+			m.detailScroll--
+		}
+		return m, nil
+	case tea.KeyDown:
+		m.detailScroll++
+		return m, nil
+	case tea.KeyEnter, tea.KeySpace:
+		if m.detailReminder != nil && (m.detailReminder.Status == reminder.Pending || m.detailReminder.Status == reminder.Triggered) {
+			m.detailReminder.Status = reminder.Acknowledged
+			m.refreshList()
+			m.saveState()
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "k":
+		if m.detailScroll > 0 {
+			m.detailScroll--
+		}
+	case "j":
+		m.detailScroll++
+	case "u":
+		if m.detailReminder != nil && m.detailReminder.Status == reminder.Acknowledged {
+			if m.detailReminder.IsDue() {
+				m.detailReminder.Status = reminder.Triggered
+			} else {
+				m.detailReminder.Status = reminder.Pending
+			}
+			m.refreshList()
+			m.saveState()
+		}
+	case "1":
+		if m.detailReminder != nil && m.detailReminder.Status == reminder.Triggered {
+			m.detailReminder.DateTime = time.Now().Add(5 * time.Minute)
+			m.detailReminder.Status = reminder.Pending
+			reminder.SortByDateTime(m.reminders)
+			m.refreshList()
+			m.saveState()
+		}
+	case "2":
+		if m.detailReminder != nil && m.detailReminder.Status == reminder.Triggered {
+			m.detailReminder.DateTime = time.Now().Add(1 * time.Hour)
+			m.detailReminder.Status = reminder.Pending
+			reminder.SortByDateTime(m.reminders)
+			m.refreshList()
+			m.saveState()
+		}
+	case "3":
+		if m.detailReminder != nil && m.detailReminder.Status == reminder.Triggered {
+			m.detailReminder.DateTime = time.Now().Add(24 * time.Hour)
+			m.detailReminder.Status = reminder.Pending
+			reminder.SortByDateTime(m.reminders)
+			m.refreshList()
+			m.saveState()
+		}
+	case "e":
+		if m.detailReminder != nil {
+			m.mode = modeAdd
+			m.editingReminder = m.detailReminder
+			prefill := m.detailReminder.DateTime.Format("2006-01-02 15:04") + " " + m.detailReminder.Description
+			m.addInput.SetValue(prefill)
+			m.addInput.Focus()
+			m.addInput.CursorEnd()
+			m.inputError = ""
+			m.detailReminder = nil
+			m.detailScroll = 0
+			return m, textinput.Blink
+		}
+	}
+	return m, nil
+}
+
 // welcomeView renders the welcome screen for standalone mode
 func (m Model) welcomeView() string {
 	width := m.width
@@ -842,6 +955,9 @@ func (m Model) View() string {
 
 	// Show input boxes based on mode
 	switch m.mode {
+	case modeDetail:
+		return appStyle.Render(m.detailView())
+
 	case modeFilter:
 		label := inputLabelStyle.Render("🔍 Filter: ")
 		input := m.filterInput.View()
@@ -971,6 +1087,143 @@ func (m Model) getFilteredReminders() []*reminder.Reminder {
 	return filtered
 }
 
+func (m Model) detailView() string {
+	if m.detailReminder == nil {
+		return ""
+	}
+
+	r := m.detailReminder
+
+	// Detail card
+	cardWidth := m.width - 8
+	if cardWidth < 40 {
+		cardWidth = 40
+	}
+	if cardWidth > 100 {
+		cardWidth = 100
+	}
+
+	var statusStyle lipgloss.Style
+	switch r.Status {
+	case reminder.Triggered:
+		statusStyle = triggeredStyle
+	case reminder.Acknowledged:
+		statusStyle = acknowledgedStyle
+	default:
+		statusStyle = normalStyle
+	}
+
+	detailCardStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(statusStyle.GetForeground()).
+		Padding(1, 2).
+		Width(cardWidth)
+
+	// Content with scrolling
+	var content strings.Builder
+	content.WriteString(inputLabelStyle.Render("Description:"))
+	content.WriteString("\n\n")
+	
+	// Wrap description text
+	descLines := wrapText(r.Description, cardWidth-4)
+	visibleLines := m.height - 15
+	if visibleLines < 5 {
+		visibleLines = 5
+	}
+	
+	startLine := m.detailScroll
+	endLine := startLine + visibleLines
+	if endLine > len(descLines) {
+		endLine = len(descLines)
+	}
+	if startLine >= len(descLines) {
+		startLine = len(descLines) - 1
+		if startLine < 0 {
+			startLine = 0
+		}
+	}
+	
+	for i := startLine; i < endLine; i++ {
+		content.WriteString(normalStyle.Render(descLines[i]))
+		content.WriteString("\n")
+	}
+	
+	content.WriteString("\n")
+	content.WriteString(sourceStyle.Render("─────────────────────────────────"))
+	content.WriteString("\n\n")
+	
+	// Metadata
+	timeStr := r.DateTime.Format("Monday, January 2, 2006 at 3:04 PM")
+	content.WriteString(inputHintStyle.Render("Time: "))
+	content.WriteString(normalStyle.Render(timeStr))
+	content.WriteString("\n")
+	
+	content.WriteString(inputHintStyle.Render("Status: "))
+	content.WriteString(statusStyle.Render(r.Status.String()))
+	content.WriteString("\n")
+	
+	if r.SourceFile != "" {
+		content.WriteString(inputHintStyle.Render("Source: "))
+		content.WriteString(sourceStyle.Render(r.SourceFile))
+		content.WriteString("\n")
+	}
+	
+	// Scroll indicator
+	if len(descLines) > visibleLines {
+		content.WriteString("\n")
+		scrollInfo := fmt.Sprintf("(showing lines %d-%d of %d, use ↑/↓ or k/j to scroll)", 
+			startLine+1, endLine, len(descLines))
+		content.WriteString(inputHintStyle.Render(scrollInfo))
+	}
+	
+	content.WriteString("\n\n")
+	content.WriteString(inputHintStyle.Render("Press ESC to close"))
+
+	detailCard := detailCardStyle.Render(content.String())
+	
+	// Center the card
+	cardStyle := lipgloss.NewStyle().
+		Width(m.width).
+		Height(m.height).
+		AlignHorizontal(lipgloss.Center).
+		AlignVertical(lipgloss.Center)
+	
+	return cardStyle.Render(detailCard)
+}
+
+func wrapText(text string, width int) []string {
+	if width < 10 {
+		width = 10
+	}
+	
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{""}
+	}
+	
+	var lines []string
+	var currentLine strings.Builder
+	
+	for _, word := range words {
+		if currentLine.Len() == 0 {
+			currentLine.WriteString(word)
+		} else if currentLine.Len()+1+len(word) <= width {
+			currentLine.WriteString(" ")
+			currentLine.WriteString(word)
+		} else {
+			lines = append(lines, currentLine.String())
+			currentLine.Reset()
+			currentLine.WriteString(word)
+		}
+	}
+	
+	if currentLine.Len() > 0 {
+		lines = append(lines, currentLine.String())
+	}
+	
+	return lines
+}
+
 func (m Model) themePickerView() string {
 	var b strings.Builder
 	b.WriteString(inputLabelStyle.Render("🎨 Select Theme"))
@@ -1006,6 +1259,7 @@ type keyMap struct {
 	Filter        key.Binding
 	Add           key.Binding
 	Edit          key.Binding
+	Detail        key.Binding
 	Theme         key.Binding
 	Layout        key.Binding
 	Help          key.Binding
@@ -1022,7 +1276,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Acknowledge, k.Unacknowledge},
 		{k.Snooze5m, k.Snooze1h, k.Snooze1d, k.Delete},
-		{k.Filter, k.Add, k.Edit, k.Theme, k.Layout, k.Help, k.Quit},
+		{k.Filter, k.Add, k.Edit, k.Detail, k.Theme, k.Layout, k.Help, k.Quit},
 	}
 }
 
@@ -1070,6 +1324,10 @@ var keys = keyMap{
 	Edit: key.NewBinding(
 		key.WithKeys("e"),
 		key.WithHelp("e", "edit"),
+	),
+	Detail: key.NewBinding(
+		key.WithKeys("K"),
+		key.WithHelp("K", "detail"),
 	),
 	Theme: key.NewBinding(
 		key.WithKeys("t"),

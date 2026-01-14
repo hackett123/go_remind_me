@@ -68,6 +68,7 @@ Go Remind supports flexible datetime parsing:
 | `u` | Unacknowledge (reopen) |
 | `dd` | Delete reminder |
 | `e` | Edit reminder |
+| `K` | Show full reminder details |
 | `1` | Snooze 5 minutes |
 | `2` | Snooze 1 hour |
 | `3` | Snooze 1 day |
