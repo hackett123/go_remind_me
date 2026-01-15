@@ -77,13 +77,15 @@ func (m *Model) selectedReminder() *reminder.Reminder {
 	return ri.reminder
 }
 
-// snooze postpones the currently selected triggered reminder by the given duration
+// snooze postpones the currently selected reminder by the given duration
+// Adds to the existing due date
 func (m *Model) snooze(duration time.Duration) {
 	r := m.selectedReminder()
-	if r == nil || r.Status != reminder.Triggered {
+	if r == nil || !r.Snoozeable() {
 		return
 	}
-	r.DateTime = time.Now().Add(duration)
+	// Add duration to existing due date
+	r.DateTime = r.DateTime.Add(duration)
 	r.Status = reminder.Pending
 	reminder.SortByDateTime(m.reminders)
 	m.refreshList()

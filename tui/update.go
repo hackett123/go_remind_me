@@ -446,8 +446,8 @@ func (m Model) updateDetailMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setStatusMessage("Unacknowledged: " + m.detailReminder.Description)
 		}
 	case "1":
-		if m.detailReminder != nil && m.detailReminder.Status == reminder.Triggered {
-			m.detailReminder.DateTime = time.Now().Add(5 * time.Minute)
+		if m.detailReminder != nil && m.detailReminder.Snoozeable() {
+			m.detailReminder.DateTime = m.detailReminder.DateTime.Add(5 * time.Minute)
 			m.detailReminder.Status = reminder.Pending
 			reminder.SortByDateTime(m.reminders)
 			m.refreshList()
@@ -455,8 +455,8 @@ func (m Model) updateDetailMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setStatusMessage("Snoozed 5 minutes: " + m.detailReminder.Description)
 		}
 	case "2":
-		if m.detailReminder != nil && m.detailReminder.Status == reminder.Triggered {
-			m.detailReminder.DateTime = time.Now().Add(1 * time.Hour)
+		if m.detailReminder != nil && m.detailReminder.Snoozeable() {
+			m.detailReminder.DateTime = m.detailReminder.DateTime.Add(1 * time.Hour)
 			m.detailReminder.Status = reminder.Pending
 			reminder.SortByDateTime(m.reminders)
 			m.refreshList()
@@ -464,8 +464,8 @@ func (m Model) updateDetailMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setStatusMessage("Snoozed 1 hour: " + m.detailReminder.Description)
 		}
 	case "3":
-		if m.detailReminder != nil && m.detailReminder.Status == reminder.Triggered {
-			m.detailReminder.DateTime = time.Now().Add(24 * time.Hour)
+		if m.detailReminder != nil && m.detailReminder.Snoozeable() {
+			m.detailReminder.DateTime = m.detailReminder.DateTime.Add(24 * time.Hour)
 			m.detailReminder.Status = reminder.Pending
 			reminder.SortByDateTime(m.reminders)
 			m.refreshList()

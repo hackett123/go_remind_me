@@ -42,6 +42,12 @@ func (r *Reminder) IsDue() bool {
 	return time.Now().After(r.DateTime)
 }
 
+// Snoozeable returns true if the reminder can be snoozed
+// Acknowledged reminders cannot be snoozed
+func (r *Reminder) Snoozeable() bool {
+	return r.Status != Acknowledged
+}
+
 // SortByDateTime sorts a slice of reminders by their DateTime
 func SortByDateTime(reminders []*Reminder) {
 	sort.Slice(reminders, func(i, j int) bool {
