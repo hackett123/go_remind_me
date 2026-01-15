@@ -241,6 +241,16 @@ func (m Model) renderCard(r *reminder.Reminder, index, width int) string {
 		descContent += "\n" + style.Render(line2)
 	}
 
-	content := descContent + "\n" + sourceStyle.Render(timeStr+" • "+source)
+	// Build bottom line with time, source, and optionally tags
+	bottomLine := sourceStyle.Render(timeStr + " • " + source)
+	if len(r.Tags) > 0 {
+		tagStrs := make([]string, len(r.Tags))
+		for i, tag := range r.Tags {
+			tagStrs[i] = "#" + tag
+		}
+		bottomLine += " " + tagStyle.Render(strings.Join(tagStrs, " "))
+	}
+
+	content := descContent + "\n" + bottomLine
 	return cardStyle.Render(content)
 }

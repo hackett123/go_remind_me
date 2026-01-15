@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go_remind/datetime"
+	"go_remind/parser"
 	"go_remind/reminder"
 )
 
@@ -122,9 +123,12 @@ func (m *Model) addReminder(input string) error {
 
 		parsedTime, err := datetime.Parse(dateStr, now)
 		if err == nil {
+			// Extract tags from description
+			cleanDesc, tags := parser.ExtractTags(descStr)
 			r := &reminder.Reminder{
 				DateTime:    parsedTime,
-				Description: descStr,
+				Description: cleanDesc,
+				Tags:        tags,
 				SourceFile:  "(added in TUI)",
 				Status:      reminder.Pending,
 			}
@@ -160,8 +164,11 @@ func (m *Model) updateReminder(r *reminder.Reminder, input string) error {
 
 		parsedTime, err := datetime.Parse(dateStr, now)
 		if err == nil {
+			// Extract tags from description
+			cleanDesc, tags := parser.ExtractTags(descStr)
 			r.DateTime = parsedTime
-			r.Description = descStr
+			r.Description = cleanDesc
+			r.Tags = tags
 			// Update status based on new time
 			if now.After(parsedTime) {
 				if r.Status != reminder.Acknowledged {
@@ -187,7 +194,24 @@ func (m Model) getFilteredReminders() []*reminder.Reminder {
 	if filterText == "" {
 		return m.reminders
 	}
+
 	var filtered []*reminder.Reminder
+
+	// Check if filtering by tag (starts with #)
+	if strings.HasPrefix(filterText, "#") {
+		tagFilter := strings.TrimPrefix(filterText, "#")
+		for _, r := range m.reminders {
+			for _, tag := range r.Tags {
+				if strings.ToLower(tag) == tagFilter {
+					filtered = append(filtered, r)
+					break
+				}
+			}
+		}
+		return filtered
+	}
+
+	// Filter by description
 	for _, r := range m.reminders {
 		if strings.Contains(strings.ToLower(r.Description), filterText) {
 			filtered = append(filtered, r)

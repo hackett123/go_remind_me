@@ -25,6 +25,9 @@ var (
 	sourceStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241"))
 
+	tagStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("81"))
+
 	selectedItemStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("170")).
 				Bold(true)

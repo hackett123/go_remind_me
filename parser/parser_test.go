@@ -224,6 +224,145 @@ func TestParseReminderContent(t *testing.T) {
 	}
 }
 
+func TestExtractTags(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		expectedText string
+		expectedTags []string
+	}{
+		{
+			name:         "single tag",
+			input:        "Call mom #family",
+			expectedText: "Call mom",
+			expectedTags: []string{"family"},
+		},
+		{
+			name:         "multiple tags",
+			input:        "Meeting #work #important",
+			expectedText: "Meeting",
+			expectedTags: []string{"work", "important"},
+		},
+		{
+			name:         "no tags",
+			input:        "Call mom",
+			expectedText: "Call mom",
+			expectedTags: nil,
+		},
+		{
+			name:         "tag in middle",
+			input:        "Call #family mom today",
+			expectedText: "Call mom today",
+			expectedTags: []string{"family"},
+		},
+		{
+			name:         "tag at start",
+			input:        "#urgent Call mom",
+			expectedText: "Call mom",
+			expectedTags: []string{"urgent"},
+		},
+		{
+			name:         "adjacent hash not a tag",
+			input:        "Check item#urgent later",
+			expectedText: "Check item#urgent later",
+			expectedTags: nil,
+		},
+		{
+			name:         "multiple tags scattered",
+			input:        "#urgent Call #family mom #important",
+			expectedText: "Call mom",
+			expectedTags: []string{"urgent", "family", "important"},
+		},
+		{
+			name:         "tag with numbers",
+			input:        "Review PR #pr123",
+			expectedText: "Review PR",
+			expectedTags: []string{"pr123"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cleanText, tags := ExtractTags(tt.input)
+
+			if cleanText != tt.expectedText {
+				t.Errorf("Expected text '%s', got '%s'", tt.expectedText, cleanText)
+			}
+
+			if len(tags) != len(tt.expectedTags) {
+				t.Errorf("Expected %d tags, got %d: %v", len(tt.expectedTags), len(tags), tags)
+				return
+			}
+
+			for i, tag := range tags {
+				if tag != tt.expectedTags[i] {
+					t.Errorf("Expected tag[%d] '%s', got '%s'", i, tt.expectedTags[i], tag)
+				}
+			}
+		})
+	}
+}
+
+func TestParseReminderContentWithTags(t *testing.T) {
+	baseTime := time.Date(2026, 1, 13, 12, 0, 0, 0, time.Local)
+
+	tests := []struct {
+		name         string
+		content      string
+		expectedDesc string
+		expectedTags []string
+	}{
+		{
+			name:         "reminder with single tag",
+			content:      "+1h Call mom #family",
+			expectedDesc: "Call mom",
+			expectedTags: []string{"family"},
+		},
+		{
+			name:         "reminder with multiple tags",
+			content:      "+30m Meeting #work #important",
+			expectedDesc: "Meeting",
+			expectedTags: []string{"work", "important"},
+		},
+		{
+			name:         "reminder without tags",
+			content:      "+1h Call mom",
+			expectedDesc: "Call mom",
+			expectedTags: nil,
+		},
+		{
+			name:         "complex datetime with tags",
+			content:      "Jan 15 3:30pm Dentist appointment #health #important",
+			expectedDesc: "Dentist appointment",
+			expectedTags: []string{"health", "important"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := parseReminderContent(tt.content, baseTime)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if r.Description != tt.expectedDesc {
+				t.Errorf("Expected description '%s', got '%s'", tt.expectedDesc, r.Description)
+			}
+
+			if len(r.Tags) != len(tt.expectedTags) {
+				t.Errorf("Expected %d tags, got %d: %v", len(tt.expectedTags), len(r.Tags), r.Tags)
+				return
+			}
+
+			for i, tag := range r.Tags {
+				if tag != tt.expectedTags[i] {
+					t.Errorf("Expected tag[%d] '%s', got '%s'", i, tt.expectedTags[i], tag)
+				}
+			}
+		})
+	}
+}
+
 func TestRegexPattern(t *testing.T) {
 	tests := []struct {
 		name     string

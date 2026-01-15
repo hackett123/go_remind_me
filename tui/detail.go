@@ -84,6 +84,16 @@ func (m Model) detailView() string {
 	content.WriteString(statusStyle.Render(r.Status.String()))
 	content.WriteString("\n")
 
+	if len(r.Tags) > 0 {
+		content.WriteString(inputHintStyle.Render("Tags: "))
+		tagStrs := make([]string, len(r.Tags))
+		for i, tag := range r.Tags {
+			tagStrs[i] = "#" + tag
+		}
+		content.WriteString(tagStyle.Render(strings.Join(tagStrs, "  ")))
+		content.WriteString("\n")
+	}
+
 	if r.SourceFile != "" {
 		content.WriteString(inputHintStyle.Render("Source: "))
 		content.WriteString(sourceStyle.Render(r.SourceFile))

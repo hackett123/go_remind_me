@@ -31,8 +31,9 @@ func (s Status) String() string {
 type Reminder struct {
 	DateTime    time.Time
 	Description string
-	SourceFile  string // For future multi-file support
-	LineNumber  int    // Helps user find it in their markdown
+	Tags        []string // Tags extracted from content (e.g., #work, #urgent)
+	SourceFile  string   // For future multi-file support
+	LineNumber  int      // Helps user find it in their markdown
 	Status      Status
 }
 

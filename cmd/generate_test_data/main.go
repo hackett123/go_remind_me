@@ -12,9 +12,12 @@ import (
 type savedReminder struct {
 	DateTime    time.Time `json:"datetime"`
 	Description string    `json:"description"`
+	Tags        []string  `json:"tags,omitempty"`
 	SourceFile  string    `json:"source_file"`
 	Status      int       `json:"status"`
 }
+
+var tags = []string{"work", "personal", "urgent", "meeting", "followup"}
 
 var descriptions = []string{
 	"Team standup meeting",
@@ -94,7 +97,18 @@ func main() {
 
 		desc := descriptions[rand.Intn(len(descriptions))]
 		// Add a number to make descriptions unique
-		desc = fmt.Sprintf("%s #%d", desc, i+1)
+		desc = fmt.Sprintf("%s (%d)", desc, i+1)
+
+		// Generate 0-5 random tags
+		numTags := rand.Intn(6)
+		var reminderTags []string
+		if numTags > 0 {
+			// Shuffle and pick first numTags
+			perm := rand.Perm(len(tags))
+			for j := 0; j < numTags; j++ {
+				reminderTags = append(reminderTags, tags[perm[j]])
+			}
+		}
 
 		status := 0 // Pending
 		// Make some past reminders triggered or acknowledged
@@ -109,6 +123,7 @@ func main() {
 		reminders[i] = savedReminder{
 			DateTime:    reminderTime,
 			Description: desc,
+			Tags:        reminderTags,
 			SourceFile:  "test_generated",
 			Status:      status,
 		}

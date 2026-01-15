@@ -64,6 +64,7 @@ func (s *Store) Path() string {
 type savedReminder struct {
 	DateTime    time.Time `json:"datetime"`
 	Description string    `json:"description"`
+	Tags        []string  `json:"tags,omitempty"`
 	SourceFile  string    `json:"source_file"`
 	Status      int       `json:"status"`
 }
@@ -88,6 +89,7 @@ func (s *Store) Load() ([]*reminder.Reminder, error) {
 		reminders[i] = &reminder.Reminder{
 			DateTime:    sr.DateTime,
 			Description: sr.Description,
+			Tags:        sr.Tags,
 			SourceFile:  sr.SourceFile,
 			Status:      reminder.Status(sr.Status),
 		}
@@ -103,6 +105,7 @@ func (s *Store) Save(reminders []*reminder.Reminder) error {
 		saved[i] = savedReminder{
 			DateTime:    r.DateTime,
 			Description: r.Description,
+			Tags:        r.Tags,
 			SourceFile:  r.SourceFile,
 			Status:      int(r.Status),
 		}
