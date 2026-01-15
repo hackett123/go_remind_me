@@ -38,6 +38,23 @@ func NewDefaultStore() (*Store, error) {
 	}, nil
 }
 
+// NewTestStore creates a Store using the test path (~/.go_remind/test/reminders_state.json)
+func NewTestStore() (*Store, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	stateDir := filepath.Join(homeDir, ".go_remind", "test")
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		return nil, err
+	}
+
+	return &Store{
+		path: filepath.Join(stateDir, stateFileName),
+	}, nil
+}
+
 // Path returns the store's file path
 func (s *Store) Path() string {
 	return s.path

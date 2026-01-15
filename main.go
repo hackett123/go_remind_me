@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,8 +18,18 @@ func main() {
 	var reminders []*reminder.Reminder
 	var tuiEvents chan tui.FileUpdateMsg
 
+	// Parse flags
+	testDir := flag.Bool("test_dir", false, "Use test state directory (~/.go_remind/test/)")
+	flag.Parse()
+
 	// Create state store
-	store, err := state.NewDefaultStore()
+	var store *state.Store
+	var err error
+	if *testDir {
+		store, err = state.NewTestStore()
+	} else {
+		store, err = state.NewDefaultStore()
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not create state store: %v\n", err)
 	}
@@ -34,9 +45,12 @@ func main() {
 		}
 	}
 
-	if len(os.Args) >= 2 {
+	// Get remaining arguments after flags
+	args := flag.Args()
+
+	if len(args) >= 1 {
 		// File/directory mode
-		path := os.Args[1]
+		path := args[0]
 
 		absPath, err := filepath.Abs(path)
 		if err != nil {

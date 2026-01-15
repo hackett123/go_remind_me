@@ -1,0 +1,128 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+type savedReminder struct {
+	DateTime    time.Time `json:"datetime"`
+	Description string    `json:"description"`
+	SourceFile  string    `json:"source_file"`
+	Status      int       `json:"status"`
+}
+
+var descriptions = []string{
+	"Team standup meeting",
+	"Review pull request",
+	"Submit expense report",
+	"Update project documentation",
+	"Call with client",
+	"Code review session",
+	"Sprint planning",
+	"Deploy to production",
+	"Database backup check",
+	"Security audit review",
+	"Performance testing",
+	"Bug triage meeting",
+	"1:1 with manager",
+	"Write unit tests",
+	"Update dependencies",
+	"Refactor legacy code",
+	"API design review",
+	"Infrastructure planning",
+	"Release notes draft",
+	"Customer feedback review",
+	"Technical debt discussion",
+	"Architecture review",
+	"Onboarding new team member",
+	"Knowledge sharing session",
+	"Quarterly planning",
+	"Budget review",
+	"Vendor evaluation",
+	"System health check",
+	"Backup verification",
+	"Certificate renewal",
+	"License renewal check",
+	"Capacity planning",
+	"Incident postmortem",
+	"Documentation update",
+	"Training session",
+	"Team retrospective",
+	"Feature demo",
+	"Stakeholder update",
+	"Risk assessment",
+	"Compliance review",
+}
+
+func main() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting home dir: %v\n", err)
+		os.Exit(1)
+	}
+
+	testDir := filepath.Join(homeDir, ".go_remind", "test")
+	if err := os.MkdirAll(testDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating test dir: %v\n", err)
+		os.Exit(1)
+	}
+
+	now := time.Now()
+	oneYearLater := now.AddDate(1, 0, 0)
+	totalDays := int(oneYearLater.Sub(now).Hours() / 24)
+
+	reminders := make([]savedReminder, 200)
+	for i := 0; i < 200; i++ {
+		// Random day offset from today to one year from now
+		dayOffset := rand.Intn(totalDays + 1)
+		// Random hour (8am to 6pm for realistic business hours)
+		hour := 8 + rand.Intn(11)
+		// Random minute (on the hour, :15, :30, or :45)
+		minute := rand.Intn(4) * 15
+
+		reminderTime := time.Date(
+			now.Year(), now.Month(), now.Day()+dayOffset,
+			hour, minute, 0, 0, now.Location(),
+		)
+
+		desc := descriptions[rand.Intn(len(descriptions))]
+		// Add a number to make descriptions unique
+		desc = fmt.Sprintf("%s #%d", desc, i+1)
+
+		status := 0 // Pending
+		// Make some past reminders triggered or acknowledged
+		if reminderTime.Before(now) {
+			if rand.Float32() < 0.5 {
+				status = 1 // Triggered
+			} else {
+				status = 2 // Acknowledged
+			}
+		}
+
+		reminders[i] = savedReminder{
+			DateTime:    reminderTime,
+			Description: desc,
+			SourceFile:  "test_generated",
+			Status:      status,
+		}
+	}
+
+	data, err := json.MarshalIndent(reminders, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error marshaling JSON: %v\n", err)
+		os.Exit(1)
+	}
+
+	statePath := filepath.Join(testDir, "reminders_state.json")
+	if err := os.WriteFile(statePath, data, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Generated 200 test reminders at %s\n", statePath)
+}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -10,7 +11,7 @@ import (
 	"go_remind/reminder"
 )
 
-func (m Model) gridView() string {
+func (m Model) gridViewContent() string {
 	items := m.getFilteredReminders()
 	if len(items) == 0 {
 		return normalStyle.Render("No reminders")
@@ -22,21 +23,46 @@ func (m Model) gridView() string {
 		cols = 1
 	}
 
+	visibleRows := m.visibleGridRows()
+	totalRows := (len(items) + cols - 1) / cols // ceiling division
+
 	if !m.sortEnabled {
-		// No sorting - render all cards in grid
+		// No sorting - render only visible rows
 		var rows []string
-		for i := 0; i < len(items); i += cols {
+
+		// Add scroll up indicator
+		if m.gridScroll > 0 {
+			rows = append(rows, sourceStyle.Render(fmt.Sprintf("  ↑ %d more rows above", m.gridScroll)))
+		}
+
+		startRow := m.gridScroll
+		endRow := m.gridScroll + visibleRows
+		if endRow > totalRows {
+			endRow = totalRows
+		}
+
+		for row := startRow; row < endRow; row++ {
 			var rowCards []string
-			for j := 0; j < cols && i+j < len(items); j++ {
-				idx := i + j
+			for col := 0; col < cols; col++ {
+				idx := row*cols + col
+				if idx >= len(items) {
+					break
+				}
 				rowCards = append(rowCards, m.renderCard(items[idx], idx, cardWidth))
 			}
 			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, rowCards...))
 		}
+
+		// Add scroll down indicator
+		if endRow < totalRows {
+			rows = append(rows, sourceStyle.Render(fmt.Sprintf("  ↓ %d more rows below", totalRows-endRow)))
+		}
+
 		return lipgloss.JoinVertical(lipgloss.Left, rows...)
 	}
 
-	// Sort into sections
+	// Sort into sections - for now render all (sections complicate row-based scrolling)
+	// TODO: implement section-aware scrolling
 	now := time.Now()
 	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
 	tomorrowEnd := todayEnd.Add(24 * time.Hour)
@@ -63,19 +89,29 @@ func (m Model) gridView() string {
 	var sections []string
 	globalIdx := 0
 
+	// Add scroll up indicator for sorted view
+	if m.gridScroll > 0 {
+		sections = append(sections, sourceStyle.Render(fmt.Sprintf("  ↑ %d more rows above", m.gridScroll)))
+	}
+
 	if len(due) > 0 {
 		sections = append(sections, sectionStyle.Render("Due"))
-		sections = append(sections, m.renderSection(due, &globalIdx, cols, cardWidth))
+		sections = append(sections, m.renderSectionWithScroll(due, &globalIdx, cols, cardWidth))
 	}
 
 	if len(comingUp) > 0 {
 		sections = append(sections, sectionStyle.Render("Coming Up!"))
-		sections = append(sections, m.renderSection(comingUp, &globalIdx, cols, cardWidth))
+		sections = append(sections, m.renderSectionWithScroll(comingUp, &globalIdx, cols, cardWidth))
 	}
 
 	if len(tomorrow) > 0 {
 		sections = append(sections, sectionStyle.Render("Tomorrow and beyond..."))
-		sections = append(sections, m.renderSection(tomorrow, &globalIdx, cols, cardWidth))
+		sections = append(sections, m.renderSectionWithScroll(tomorrow, &globalIdx, cols, cardWidth))
+	}
+
+	// Add scroll down indicator
+	if m.gridScroll+visibleRows < totalRows {
+		sections = append(sections, sourceStyle.Render(fmt.Sprintf("  ↓ %d more rows below", totalRows-m.gridScroll-visibleRows)))
 	}
 
 	if len(sections) == 0 {
@@ -85,16 +121,22 @@ func (m Model) gridView() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
-func (m Model) renderSection(items []*reminder.Reminder, globalIdx *int, cols, cardWidth int) string {
+func (m Model) renderSectionWithScroll(items []*reminder.Reminder, globalIdx *int, cols, cardWidth int) string {
 	var rows []string
+	visibleRows := m.visibleGridRows()
+
 	for i := 0; i < len(items); i += cols {
+		currentRow := *globalIdx / cols
 		var rowCards []string
 		for j := 0; j < cols && i+j < len(items); j++ {
-			idx := i + j
-			rowCards = append(rowCards, m.renderCard(items[idx], *globalIdx, cardWidth))
+			rowCards = append(rowCards, m.renderCard(items[i+j], *globalIdx, cardWidth))
 			*globalIdx++
 		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, rowCards...))
+
+		// Only include row if it's in the visible range
+		if currentRow >= m.gridScroll && currentRow < m.gridScroll+visibleRows {
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, rowCards...))
+		}
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }

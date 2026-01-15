@@ -43,9 +43,13 @@ type Model struct {
 	height        int
 
 	// Grid mode
-	gridIndex    int
-	gridColumns  int
-	compactIndex int
+	gridIndex   int
+	gridColumns int
+	gridScroll  int // row offset for grid scrolling
+
+	// Compact mode
+	compactIndex  int
+	compactScroll int // line offset for compact scrolling
 
 	// Sorting
 	sortEnabled bool

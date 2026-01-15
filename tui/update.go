@@ -47,7 +47,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.help.Width = msg.Width
-		listHeight := msg.Height - 10
+		listHeight := msg.Height - 4
 		if listHeight < 5 {
 			listHeight = 5
 		}
@@ -192,22 +192,26 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.gridIndex < 0 {
 				m.gridIndex = 0
 			}
+			m.scrollToSelection()
 			return m, nil
 		case key.Matches(msg, keys.Down):
 			m.gridIndex += m.gridColumns
 			if m.gridIndex > maxIdx {
 				m.gridIndex = maxIdx
 			}
+			m.scrollToSelection()
 			return m, nil
 		case msg.String() == "h" || msg.String() == "left":
 			if m.gridIndex > 0 {
 				m.gridIndex--
 			}
+			m.scrollToSelection()
 			return m, nil
 		case msg.String() == "l" || msg.String() == "right":
 			if m.gridIndex < maxIdx {
 				m.gridIndex++
 			}
+			m.scrollToSelection()
 			return m, nil
 		}
 	}
@@ -224,11 +228,13 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.compactIndex > 0 {
 				m.compactIndex--
 			}
+			m.scrollToSelection()
 			return m, nil
 		case key.Matches(msg, keys.Down):
 			if m.compactIndex < maxIdx {
 				m.compactIndex++
 			}
+			m.scrollToSelection()
 			return m, nil
 		}
 	}

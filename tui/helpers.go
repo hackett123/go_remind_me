@@ -195,3 +195,74 @@ func (m Model) getFilteredReminders() []*reminder.Reminder {
 	}
 	return filtered
 }
+
+// scrollToSelection adjusts scroll offset to ensure selected item is visible
+func (m *Model) scrollToSelection() {
+	if currentLayout == LayoutCard {
+		m.scrollGridToSelection()
+	} else if m.sortEnabled {
+		m.scrollCompactToSelection()
+	}
+}
+
+// scrollGridToSelection ensures the selected card's row is visible
+func (m *Model) scrollGridToSelection() {
+	if m.gridColumns < 1 {
+		return
+	}
+	selectedRow := m.gridIndex / m.gridColumns
+	visibleRows := m.visibleGridRows()
+
+	// Scroll up if selection is above visible area
+	if selectedRow < m.gridScroll {
+		m.gridScroll = selectedRow
+	}
+
+	// Scroll down if selection is below visible area
+	if selectedRow >= m.gridScroll+visibleRows {
+		m.gridScroll = selectedRow - visibleRows + 1
+	}
+
+	if m.gridScroll < 0 {
+		m.gridScroll = 0
+	}
+}
+
+// scrollCompactToSelection ensures the selected line is visible
+func (m *Model) scrollCompactToSelection() {
+	visibleLines := m.visibleCompactLines()
+
+	// Scroll up if selection is above visible area
+	if m.compactIndex < m.compactScroll {
+		m.compactScroll = m.compactIndex
+	}
+
+	// Scroll down if selection is below visible area
+	if m.compactIndex >= m.compactScroll+visibleLines {
+		m.compactScroll = m.compactIndex - visibleLines + 1
+	}
+
+	if m.compactScroll < 0 {
+		m.compactScroll = 0
+	}
+}
+
+// visibleGridRows returns how many card rows fit in the available height
+func (m *Model) visibleGridRows() int {
+	// Card height: 4 content + 2 border + 1 margin = 7 lines per row
+	cardRowHeight := 7
+	availableHeight := m.height - 4 // leave room for help bar and scroll indicators
+	if availableHeight < cardRowHeight {
+		return 1
+	}
+	return availableHeight / cardRowHeight
+}
+
+// visibleCompactLines returns how many lines fit in the available height
+func (m *Model) visibleCompactLines() int {
+	availableHeight := m.height - 4 // leave room for help bar and scroll indicators
+	if availableHeight < 1 {
+		return 1
+	}
+	return availableHeight
+}

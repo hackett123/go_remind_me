@@ -44,15 +44,10 @@ func (m Model) welcomeView() string {
 	return strings.Join(centered, "\n")
 }
 
-func (m Model) compactView() string {
+func (m Model) compactViewContent() string {
 	items := m.getFilteredReminders()
 	if len(items) == 0 {
 		return normalStyle.Render("No reminders")
-	}
-
-	if !m.sortEnabled {
-		// No sorting - use regular list view
-		return m.list.View()
 	}
 
 	// Sort into sections
@@ -79,49 +74,73 @@ func (m Model) compactView() string {
 		MarginTop(1).
 		MarginBottom(0)
 
-	var sections []string
+	// Build all lines first
+	var allLines []string
 
 	if len(due) > 0 {
-		sections = append(sections, sectionStyle.Render("Due"))
-		sections = append(sections, m.renderCompactSection(due))
+		allLines = append(allLines, sectionStyle.Render("Due"))
+		allLines = append(allLines, m.renderCompactLines(due)...)
 	}
 
 	if len(comingUp) > 0 {
-		sections = append(sections, sectionStyle.Render("Coming Up!"))
-		sections = append(sections, m.renderCompactSection(comingUp))
+		allLines = append(allLines, sectionStyle.Render("Coming Up!"))
+		allLines = append(allLines, m.renderCompactLines(comingUp)...)
 	}
 
 	if len(tomorrow) > 0 {
-		sections = append(sections, sectionStyle.Render("Tomorrow and beyond..."))
-		sections = append(sections, m.renderCompactSection(tomorrow))
+		allLines = append(allLines, sectionStyle.Render("Tomorrow and beyond..."))
+		allLines = append(allLines, m.renderCompactLines(tomorrow)...)
 	}
 
-	if len(sections) == 0 {
+	if len(allLines) == 0 {
 		return normalStyle.Render("No pending reminders")
 	}
 
-	return strings.Join(sections, "\n")
+	// Apply scrolling - show only visible lines
+	visibleLines := m.visibleCompactLines()
+	totalLines := len(allLines)
+
+	var output []string
+
+	// Scroll up indicator
+	if m.compactScroll > 0 {
+		output = append(output, sourceStyle.Render(fmt.Sprintf("  ↑ %d more lines above", m.compactScroll)))
+	}
+
+	startLine := m.compactScroll
+	endLine := m.compactScroll + visibleLines
+	if startLine > totalLines {
+		startLine = totalLines
+	}
+	if endLine > totalLines {
+		endLine = totalLines
+	}
+
+	output = append(output, allLines[startLine:endLine]...)
+
+	// Scroll down indicator
+	if endLine < totalLines {
+		output = append(output, sourceStyle.Render(fmt.Sprintf("  ↓ %d more lines below", totalLines-endLine)))
+	}
+
+	return strings.Join(output, "\n")
 }
 
-func (m Model) renderCompactSection(items []*reminder.Reminder) string {
+func (m Model) renderCompactLines(items []*reminder.Reminder) []string {
 	var lines []string
-	globalIdx := 0
 	allItems := m.getFilteredReminders()
-	
+
 	for _, r := range items {
 		// Find this reminder's global index
+		globalIdx := 0
 		for i, ar := range allItems {
 			if ar == r {
 				globalIdx = i
 				break
 			}
 		}
-		
+
 		timeStr := r.DateTime.Format("Jan 2 3:04pm")
-		source := r.SourceFile
-		if source == "" {
-			source = "(added in TUI)"
-		}
 
 		var statusIcon string
 		var style lipgloss.Style
@@ -137,7 +156,7 @@ func (m Model) renderCompactSection(items []*reminder.Reminder) string {
 			statusIcon = "○"
 			style = normalStyle
 		}
-		
+
 		// Highlight selected item
 		if globalIdx == m.compactIndex {
 			statusIcon = "▸"
@@ -149,7 +168,7 @@ func (m Model) renderCompactSection(items []*reminder.Reminder) string {
 		line := fmt.Sprintf("%s %-18s %-12s %s", statusIcon, timeStr, r.Status.String(), r.Description)
 		lines = append(lines, style.Render(line))
 	}
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 func (m Model) themePickerView() string {
@@ -189,16 +208,19 @@ func (m Model) View() string {
 	// Use grid view for card layout, list view for compact
 	if currentLayout == LayoutCard {
 		if len(m.reminders) == 0 {
-			asciiTitle := `   ___                       _           _   __  __      _ 
+			asciiTitle := `   ___                       _           _   __  __      _
   / __|___    _ _ ___ _ __ (_)_ _  __| | |  \/  |___ | |
  | (_ / _ \  | '_/ -_) '  \| | ' \/ _' | | |\/| / -_)|_|
   \___\___/  |_| \___|_|_|_|_|_||_\__,_| |_|  |_\___/(_)`
 			b.WriteString(titleStyle.Render(asciiTitle))
 			b.WriteString("\n\n")
 		}
-		b.WriteString(m.gridView())
+		b.WriteString(m.gridViewContent())
+	} else if m.sortEnabled {
+		b.WriteString(m.compactViewContent())
 	} else {
-		b.WriteString(m.compactView())
+		// Unsorted compact uses built-in list scrolling
+		b.WriteString(m.list.View())
 	}
 
 	// Show input boxes based on mode
