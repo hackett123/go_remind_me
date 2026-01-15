@@ -189,6 +189,33 @@ func (m *Model) updateReminder(r *reminder.Reminder, input string) error {
 	return fmt.Errorf("couldn't parse time from input")
 }
 
+// getAllTags returns all unique tags from all reminders
+func (m Model) getAllTags() []string {
+	tagSet := make(map[string]bool)
+	for _, r := range m.reminders {
+		for _, tag := range r.Tags {
+			tagSet[tag] = true
+		}
+	}
+	var tags []string
+	for tag := range tagSet {
+		tags = append(tags, tag)
+	}
+	return tags
+}
+
+// getMatchingTags returns tags that match the given prefix (case-insensitive)
+func (m Model) getMatchingTags(prefix string) []string {
+	prefix = strings.ToLower(prefix)
+	var matches []string
+	for _, tag := range m.getAllTags() {
+		if strings.HasPrefix(strings.ToLower(tag), prefix) {
+			matches = append(matches, tag)
+		}
+	}
+	return matches
+}
+
 func (m Model) getFilteredReminders() []*reminder.Reminder {
 	filterText := strings.ToLower(m.filterInput.Value())
 	if filterText == "" {

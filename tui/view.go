@@ -251,6 +251,32 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		b.WriteString(box)
 
+		// Show matching tags when typing a tag filter
+		filterText := m.filterInput.Value()
+		if strings.HasPrefix(filterText, "#") && len(filterText) > 1 {
+			tagPrefix := strings.TrimPrefix(filterText, "#")
+			matches := m.getMatchingTags(tagPrefix)
+			if len(matches) > 0 {
+				var tagStrs []string
+				for _, tag := range matches {
+					tagStrs = append(tagStrs, "#"+tag)
+				}
+				b.WriteString("\n")
+				b.WriteString(inputHintStyle.Render("  Matching tags: ") + tagStyle.Render(strings.Join(tagStrs, "  ")))
+			}
+		} else if filterText == "#" {
+			// Show all available tags when just "#" is typed
+			allTags := m.getAllTags()
+			if len(allTags) > 0 {
+				var tagStrs []string
+				for _, tag := range allTags {
+					tagStrs = append(tagStrs, "#"+tag)
+				}
+				b.WriteString("\n")
+				b.WriteString(inputHintStyle.Render("  Available tags: ") + tagStyle.Render(strings.Join(tagStrs, "  ")))
+			}
+		}
+
 	case modeAdd:
 		var label string
 		if m.editingReminder != nil {

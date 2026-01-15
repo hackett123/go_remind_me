@@ -23,12 +23,12 @@ Then, in any markdown file within that directory, embed reminders inline as you 
 ```markdown
 # Meeting Notes
 
-Don't forget to follow up with the team [remind_me +2h Send meeting summary]
+Don't forget to follow up with the team [remind_me +2h Send meeting summary #work]
 
 ## Action Items
 
-- Review PR [remind_me tomorrow 9am Review PR #123]
-- Call mom [remind_me Jan 15 3pm Call mom]
+- Review PR [remind_me tomorrow 9am Review PR #work #urgent]
+- Call mom [remind_me Jan 15 3pm Call mom #personal]
 ```
 
 Go Remind Me! watches for file changes in real-time—save your file and the reminder instantly appears.
@@ -56,6 +56,22 @@ Go Remind supports flexible datetime parsing:
 | Date + time | `Jan 15 3pm`, `January 15 3:30pm` |
 | Full date | `Jan 15 2025 3pm`, `2025-01-15 15:30` |
 
+### Tags
+
+Add tags to reminders using `#tagname` anywhere in the description:
+
+```
++1h Call mom #personal
+tomorrow 9am Team standup #work #meeting
++30m Review PR #work #urgent
+```
+
+Tags are:
+- Extracted from the description and stored separately
+- Displayed in card view and detail view (press `K`)
+- Hidden in compact view for a cleaner display
+- Filterable: press `/` and type `#tagname` to filter by tag
+
 ## Keybindings
 
 | Key | Action |
@@ -72,7 +88,7 @@ Go Remind supports flexible datetime parsing:
 | `1` | Snooze 5 minutes |
 | `2` | Snooze 1 hour |
 | `3` | Snooze 1 day |
-| `/` | Filter reminders |
+| `/` | Filter reminders (use `#tag` to filter by tag) |
 | `n` | New reminder |
 | `t` | Change theme |
 | `v` | Toggle view (compact/card) |
