@@ -1063,13 +1063,40 @@ func (m Model) renderCard(r *reminder.Reminder, index, width int) string {
 		BorderForeground(borderColor).
 		Padding(0, 1).
 		Width(width).
+		Height(4).
 		MarginRight(1)
 
 	desc := r.Description
-	if len(desc) > width-4 {
-		desc = desc[:width-7] + "..."
+	maxWidth := width - 4
+	
+	// Wrap description to two lines at word boundaries
+	var line1, line2 string
+	if len(desc) <= maxWidth {
+		line1 = desc
+	} else {
+		// Find last space before maxWidth
+		breakPoint := maxWidth
+		for i := maxWidth; i > 0; i-- {
+			if desc[i] == ' ' {
+				breakPoint = i
+				break
+			}
+		}
+		line1 = desc[:breakPoint]
+		line2 = strings.TrimSpace(desc[breakPoint:])
+		
+		// Truncate line2 if too long
+		if len(line2) > maxWidth {
+			line2 = line2[:maxWidth-3] + "..."
+		}
 	}
-	content := style.Render(desc) + "\n" + sourceStyle.Render(timeStr+" • "+source)
+	
+	descContent := style.Render(line1)
+	if line2 != "" {
+		descContent += "\n" + style.Render(line2)
+	}
+	
+	content := descContent + "\n" + sourceStyle.Render(timeStr+" • "+source)
 	return cardStyle.Render(content)
 }
 
