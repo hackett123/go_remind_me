@@ -39,6 +39,7 @@ type Model struct {
 	watcherEvents <-chan FileUpdateMsg
 	store         *state.Store
 	pendingDelete bool
+	pendingG      bool
 	width         int
 	height        int
 

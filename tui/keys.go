@@ -9,6 +9,10 @@ import (
 type keyMap struct {
 	Up            key.Binding
 	Down          key.Binding
+	PrevSection   key.Binding
+	NextSection   key.Binding
+	GotoFirst     key.Binding
+	GotoLast      key.Binding
 	Acknowledge   key.Binding
 	Unacknowledge key.Binding
 	Delete        key.Binding
@@ -34,8 +38,8 @@ func (k keyMap) ShortHelp() []key.Binding {
 // FullHelp returns key bindings for the full help view
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Acknowledge, k.Unacknowledge},
-		{k.Snooze5m, k.Snooze1h, k.Snooze1d, k.Delete},
+		{k.Up, k.Down, k.PrevSection, k.NextSection, k.GotoFirst, k.GotoLast},
+		{k.Acknowledge, k.Unacknowledge, k.Snooze5m, k.Snooze1h, k.Snooze1d, k.Delete},
 		{k.Filter, k.Add, k.Edit, k.Detail, k.Theme, k.Layout, k.Sort, k.Help, k.Quit},
 	}
 }
@@ -50,6 +54,22 @@ var keys = keyMap{
 	Down: key.NewBinding(
 		key.WithKeys("down", "j"),
 		key.WithHelp("↓/j", "down"),
+	),
+	PrevSection: key.NewBinding(
+		key.WithKeys("{"),
+		key.WithHelp("{", "prev section"),
+	),
+	NextSection: key.NewBinding(
+		key.WithKeys("}"),
+		key.WithHelp("}", "next section"),
+	),
+	GotoFirst: key.NewBinding(
+		key.WithKeys("g"),
+		key.WithHelp("gg", "first"),
+	),
+	GotoLast: key.NewBinding(
+		key.WithKeys("G"),
+		key.WithHelp("G", "last"),
 	),
 	Acknowledge: key.NewBinding(
 		key.WithKeys("enter", " "),

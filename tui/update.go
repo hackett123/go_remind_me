@@ -80,9 +80,39 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.pendingDelete = true
 		}
+		m.pendingG = false
 		return m, nil
 	}
 	m.pendingDelete = false
+
+	// Handle 'gg' for go to first (vim-style)
+	if msg.String() == "g" {
+		if m.pendingG {
+			// gg - go to first item
+			m.gotoFirstItem()
+			m.pendingG = false
+		} else {
+			m.pendingG = true
+		}
+		return m, nil
+	}
+	m.pendingG = false
+
+	// Handle 'G' for go to last
+	if msg.String() == "G" {
+		m.gotoLastItem()
+		return m, nil
+	}
+
+	// Handle '{' and '}' for section navigation
+	if msg.String() == "{" {
+		m.gotoPrevSection()
+		return m, nil
+	}
+	if msg.String() == "}" {
+		m.gotoNextSection()
+		return m, nil
+	}
 
 	switch {
 	case key.Matches(msg, keys.Quit):

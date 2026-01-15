@@ -359,10 +359,186 @@ func (m *Model) visibleGridRows() int {
 // visibleCompactItems returns how many items fit in the available height
 // Each item is 1 line, plus we account for ~3 section headers
 func (m *Model) visibleCompactItems() int {
-	availableHeight := m.height - 4 // leave room for help bar and scroll indicators
-	availableHeight -= 3            // approximate space for section headers
+	availableHeight := m.height - 6 // leave room for help bar, scroll indicators, and some headers
 	if availableHeight < 1 {
 		return 1
 	}
 	return availableHeight
+}
+
+// getSectionBoundaries returns the starting index of each non-empty section
+func (m *Model) getSectionBoundaries() []int {
+	items := m.getFilteredReminders()
+	if len(items) == 0 {
+		return []int{0}
+	}
+
+	now := time.Now()
+	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+	tomorrowEnd := todayEnd.Add(24 * time.Hour)
+	daysUntilEndOfWeek := (7 - int(now.Weekday())) % 7
+	thisWeekEnd := time.Date(now.Year(), now.Month(), now.Day()+daysUntilEndOfWeek, 23, 59, 59, 0, now.Location())
+	nextWeekEnd := thisWeekEnd.Add(7 * 24 * time.Hour)
+	thisMonthEnd := time.Date(now.Year(), now.Month()+1, 0, 23, 59, 59, 0, now.Location())
+	nextMonthEnd := time.Date(now.Year(), now.Month()+2, 0, 23, 59, 59, 0, now.Location())
+
+	// Count items in each section
+	var counts [7]int
+	for _, r := range items {
+		if r.DateTime.Before(now) {
+			counts[0]++
+		} else if r.DateTime.Before(todayEnd) {
+			counts[1]++
+		} else if r.DateTime.Before(tomorrowEnd) {
+			counts[2]++
+		} else if r.DateTime.Before(thisWeekEnd) {
+			counts[3]++
+		} else if r.DateTime.Before(nextWeekEnd) {
+			counts[4]++
+		} else if r.DateTime.Before(thisMonthEnd) {
+			counts[5]++
+		} else if r.DateTime.Before(nextMonthEnd) {
+			counts[6]++
+		} else {
+			counts[6]++
+		}
+	}
+
+	// Build list of section start indices (only for non-empty sections)
+	var boundaries []int
+	idx := 0
+	for _, count := range counts {
+		if count > 0 {
+			boundaries = append(boundaries, idx)
+			idx += count
+		}
+	}
+
+	if len(boundaries) == 0 {
+		return []int{0}
+	}
+	return boundaries
+}
+
+// getNextSectionStart returns the start index of the next section after currentIdx
+func (m *Model) getNextSectionStart(currentIdx int) int {
+	boundaries := m.getSectionBoundaries()
+	items := m.getFilteredReminders()
+	maxIdx := len(items) - 1
+
+	for _, boundary := range boundaries {
+		if boundary > currentIdx {
+			return boundary
+		}
+	}
+	// Already at or past last section, go to end
+	return maxIdx
+}
+
+// getPrevSectionStart returns the start index of the previous section before currentIdx
+func (m *Model) getPrevSectionStart(currentIdx int) int {
+	boundaries := m.getSectionBoundaries()
+
+	// Find the section that contains currentIdx, then go to previous
+	prevBoundary := 0
+	for _, boundary := range boundaries {
+		if boundary >= currentIdx {
+			break
+		}
+		prevBoundary = boundary
+	}
+
+	// If we're at the start of a section, go to the previous section
+	for _, boundary := range boundaries {
+		if boundary == currentIdx && prevBoundary < currentIdx {
+			// Find the boundary before prevBoundary
+			for i := len(boundaries) - 1; i >= 0; i-- {
+				if boundaries[i] < currentIdx {
+					return boundaries[i]
+				}
+			}
+		}
+	}
+
+	return prevBoundary
+}
+
+// gotoFirstItem moves selection to the first item
+func (m *Model) gotoFirstItem() {
+	if currentLayout == LayoutCard {
+		m.gridIndex = 0
+		m.gridScroll = 0
+	} else if m.sortEnabled {
+		m.compactIndex = 0
+		m.compactScroll = 0
+	} else {
+		m.list.Select(0)
+	}
+}
+
+// gotoLastItem moves selection to the last item
+func (m *Model) gotoLastItem() {
+	items := m.getFilteredReminders()
+	maxIdx := len(items) - 1
+	if maxIdx < 0 {
+		maxIdx = 0
+	}
+
+	if currentLayout == LayoutCard {
+		m.gridIndex = maxIdx
+		m.scrollToSelection()
+	} else if m.sortEnabled {
+		m.compactIndex = maxIdx
+		m.scrollToSelection()
+	} else {
+		m.list.Select(maxIdx)
+	}
+}
+
+// gotoPrevSection moves selection to the start of the previous section
+func (m *Model) gotoPrevSection() {
+	var currentIdx int
+	if currentLayout == LayoutCard {
+		currentIdx = m.gridIndex
+	} else if m.sortEnabled {
+		currentIdx = m.compactIndex
+	} else {
+		currentIdx = m.list.Index()
+	}
+
+	newIdx := m.getPrevSectionStart(currentIdx)
+
+	if currentLayout == LayoutCard {
+		m.gridIndex = newIdx
+		m.scrollToSelection()
+	} else if m.sortEnabled {
+		m.compactIndex = newIdx
+		m.scrollToSelection()
+	} else {
+		m.list.Select(newIdx)
+	}
+}
+
+// gotoNextSection moves selection to the start of the next section
+func (m *Model) gotoNextSection() {
+	var currentIdx int
+	if currentLayout == LayoutCard {
+		currentIdx = m.gridIndex
+	} else if m.sortEnabled {
+		currentIdx = m.compactIndex
+	} else {
+		currentIdx = m.list.Index()
+	}
+
+	newIdx := m.getNextSectionStart(currentIdx)
+
+	if currentLayout == LayoutCard {
+		m.gridIndex = newIdx
+		m.scrollToSelection()
+	} else if m.sortEnabled {
+		m.compactIndex = newIdx
+		m.scrollToSelection()
+	} else {
+		m.list.Select(newIdx)
+	}
 }
