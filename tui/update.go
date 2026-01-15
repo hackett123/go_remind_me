@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -41,6 +42,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshList()
 			m.saveState()
 		}
+		// Clear status message after 3 seconds
+		if m.statusMessage != "" && time.Since(m.statusMessageTime) > 3*time.Second {
+			m.statusMessage = ""
+		}
 		return m, tickCmd()
 
 	case tea.WindowSizeMsg:
@@ -63,6 +68,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		reminder.SortByDateTime(m.reminders)
 		m.refreshList()
 		m.saveState()
+		m.setStatusMessage(fmt.Sprintf("File updated: %d reminders", len(msg.Reminders)))
 		return m, m.waitForFileUpdate()
 	}
 
@@ -75,7 +81,12 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle 'dd' for delete (vim-style)
 	if msg.String() == "d" {
 		if m.pendingDelete {
-			m.deleteCurrentReminder()
+			r := m.selectedReminder()
+			if r != nil {
+				desc := r.Description
+				m.deleteCurrentReminder()
+				m.setStatusMessage("Deleted: " + desc)
+			}
 			m.pendingDelete = false
 		} else {
 			m.pendingDelete = true
@@ -171,6 +182,7 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			r.Status = reminder.Acknowledged
 			m.refreshList()
 			m.saveState()
+			m.setStatusMessage("Acknowledged: " + r.Description)
 		}
 		return m, nil
 
@@ -184,6 +196,7 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.refreshList()
 			m.saveState()
+			m.setStatusMessage("Unacknowledged: " + r.Description)
 		}
 		return m, nil
 
@@ -374,7 +387,11 @@ func (m Model) updateDetailMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle 'dd' for delete
 	if msg.String() == "d" {
 		if m.pendingDelete {
-			m.deleteCurrentReminder()
+			if m.detailReminder != nil {
+				desc := m.detailReminder.Description
+				m.deleteCurrentReminder()
+				m.setStatusMessage("Deleted: " + desc)
+			}
 			m.pendingDelete = false
 			m.mode = modeNormal
 			m.detailReminder = nil
@@ -405,6 +422,7 @@ func (m Model) updateDetailMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detailReminder.Status = reminder.Acknowledged
 			m.refreshList()
 			m.saveState()
+			m.setStatusMessage("Acknowledged: " + m.detailReminder.Description)
 		}
 		return m, nil
 	}
@@ -425,6 +443,7 @@ func (m Model) updateDetailMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.refreshList()
 			m.saveState()
+			m.setStatusMessage("Unacknowledged: " + m.detailReminder.Description)
 		}
 	case "1":
 		if m.detailReminder != nil && m.detailReminder.Status == reminder.Triggered {
@@ -433,6 +452,7 @@ func (m Model) updateDetailMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			reminder.SortByDateTime(m.reminders)
 			m.refreshList()
 			m.saveState()
+			m.setStatusMessage("Snoozed 5 minutes: " + m.detailReminder.Description)
 		}
 	case "2":
 		if m.detailReminder != nil && m.detailReminder.Status == reminder.Triggered {
@@ -441,6 +461,7 @@ func (m Model) updateDetailMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			reminder.SortByDateTime(m.reminders)
 			m.refreshList()
 			m.saveState()
+			m.setStatusMessage("Snoozed 1 hour: " + m.detailReminder.Description)
 		}
 	case "3":
 		if m.detailReminder != nil && m.detailReminder.Status == reminder.Triggered {
@@ -449,6 +470,7 @@ func (m Model) updateDetailMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			reminder.SortByDateTime(m.reminders)
 			m.refreshList()
 			m.saveState()
+			m.setStatusMessage("Snoozed 1 day: " + m.detailReminder.Description)
 		}
 	case "e":
 		if m.detailReminder != nil {

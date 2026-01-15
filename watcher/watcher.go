@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -11,6 +12,8 @@ import (
 	"go_remind/parser"
 	"go_remind/reminder"
 )
+
+const debounceDelay = 100 * time.Millisecond
 
 // FileEvent is sent when files are updated with new reminders
 type FileEvent struct {
@@ -24,6 +27,10 @@ type Watcher struct {
 	fsWatcher *fsnotify.Watcher
 	Events    chan FileEvent
 	done      chan struct{}
+
+	// Debouncing
+	mu       sync.Mutex
+	pending  map[string]*time.Timer
 }
 
 // New creates a new Watcher
@@ -37,6 +44,7 @@ func New() (*Watcher, error) {
 		fsWatcher: fsw,
 		Events:    make(chan FileEvent, 10),
 		done:      make(chan struct{}),
+		pending:   make(map[string]*time.Timer),
 	}, nil
 }
 
@@ -91,6 +99,12 @@ func (w *Watcher) run() {
 	for {
 		select {
 		case <-w.done:
+			// Cancel any pending timers
+			w.mu.Lock()
+			for _, timer := range w.pending {
+				timer.Stop()
+			}
+			w.mu.Unlock()
 			return
 
 		case event, ok := <-w.fsWatcher.Events:
@@ -120,13 +134,26 @@ func (w *Watcher) run() {
 				continue
 			}
 
-			// Parse the file
-			reminders, err := parser.ParseFile(event.Name, time.Now())
-			w.Events <- FileEvent{
-				FilePath:  event.Name,
-				Reminders: reminders,
-				Err:       err,
+			// Debounce: reset timer for this file
+			w.mu.Lock()
+			if timer, exists := w.pending[event.Name]; exists {
+				timer.Stop()
 			}
+			filePath := event.Name // capture for closure
+			w.pending[filePath] = time.AfterFunc(debounceDelay, func() {
+				w.mu.Lock()
+				delete(w.pending, filePath)
+				w.mu.Unlock()
+
+				// Parse the file
+				reminders, err := parser.ParseFile(filePath, time.Now())
+				w.Events <- FileEvent{
+					FilePath:  filePath,
+					Reminders: reminders,
+					Err:       err,
+				}
+			})
+			w.mu.Unlock()
 
 		case err, ok := <-w.fsWatcher.Errors:
 			if !ok {

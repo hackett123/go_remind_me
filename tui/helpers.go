@@ -10,6 +10,12 @@ import (
 	"go_remind/reminder"
 )
 
+// setStatusMessage sets a temporary status message that will be displayed
+func (m *Model) setStatusMessage(msg string) {
+	m.statusMessage = msg
+	m.statusMessageTime = time.Now()
+}
+
 // saveState persists the current reminders to disk
 func (m *Model) saveState() {
 	if m.store == nil {
@@ -82,6 +88,30 @@ func (m *Model) snooze(duration time.Duration) {
 	reminder.SortByDateTime(m.reminders)
 	m.refreshList()
 	m.saveState()
+	m.setStatusMessage(fmt.Sprintf("Snoozed %s: %s", formatDuration(duration), r.Description))
+}
+
+// formatDuration formats a duration for display
+func formatDuration(d time.Duration) string {
+	if d >= 24*time.Hour {
+		days := int(d / (24 * time.Hour))
+		if days == 1 {
+			return "1 day"
+		}
+		return fmt.Sprintf("%d days", days)
+	}
+	if d >= time.Hour {
+		hours := int(d / time.Hour)
+		if hours == 1 {
+			return "1 hour"
+		}
+		return fmt.Sprintf("%d hours", hours)
+	}
+	minutes := int(d / time.Minute)
+	if minutes == 1 {
+		return "1 minute"
+	}
+	return fmt.Sprintf("%d minutes", minutes)
 }
 
 // deleteCurrentReminder removes the currently selected reminder from tracking
@@ -136,6 +166,7 @@ func (m *Model) addReminder(input string) error {
 			reminder.SortByDateTime(m.reminders)
 			m.refreshList()
 			m.saveState()
+			m.setStatusMessage("Added: " + cleanDesc)
 			return nil
 		}
 	}
@@ -182,6 +213,7 @@ func (m *Model) updateReminder(r *reminder.Reminder, input string) error {
 			reminder.SortByDateTime(m.reminders)
 			m.refreshList()
 			m.saveState()
+			m.setStatusMessage("Edited: " + cleanDesc)
 			return nil
 		}
 	}

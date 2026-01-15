@@ -85,18 +85,29 @@ func main() {
 				os.Exit(1)
 			}
 		} else {
-			if err := w.WatchFile(absPath); err != nil {
-				fmt.Fprintf(os.Stderr, "Error watching file: %v\n", err)
+			// Watch the parent directory instead of the file directly.
+			// This handles editors that do atomic saves (write temp + rename).
+			parentDir := filepath.Dir(absPath)
+			if err := w.WatchDirectory(parentDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Error watching directory: %v\n", err)
 				os.Exit(1)
 			}
 		}
 
 		tuiEvents = make(chan tui.FileUpdateMsg, 10)
 
+		// Track which file to watch for single-file mode
+		watchPath := absPath
+		watchSingleFile := !isDir
+
 		w.Start()
 		go func() {
 			for event := range w.Events {
 				if event.Err != nil {
+					continue
+				}
+				// When watching a single file, filter out events for other files
+				if watchSingleFile && event.FilePath != watchPath {
 					continue
 				}
 				tuiEvents <- tui.FileUpdateMsg{

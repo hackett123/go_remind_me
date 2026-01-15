@@ -344,6 +344,133 @@ func TestWatcherIgnoresNonMarkdownFiles(t *testing.T) {
 	}
 }
 
+func TestWatchSingleFileMultipleUpdates(t *testing.T) {
+	// Create a temp file
+	tempFile, err := os.CreateTemp("", "watch_multi_*.md")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tempPath := tempFile.Name()
+	defer os.Remove(tempPath)
+	tempFile.Close()
+
+	// Create watcher and watch the single file
+	w, err := New()
+	if err != nil {
+		t.Fatalf("Failed to create watcher: %v", err)
+	}
+	defer w.Stop()
+
+	err = w.WatchFile(tempPath)
+	if err != nil {
+		t.Fatalf("Failed to watch file: %v", err)
+	}
+
+	w.Start()
+
+	// Give watcher time to set up
+	time.Sleep(100 * time.Millisecond)
+
+	// Perform multiple updates
+	updates := []struct {
+		content  string
+		expected int
+	}{
+		{"[remind_me +1h One]", 1},
+		{"[remind_me +1h One]\n[remind_me +2h Two]", 2},
+		{"[remind_me +1h One]\n[remind_me +2h Two]\n[remind_me +3h Three]", 3},
+	}
+
+	for i, update := range updates {
+		err = os.WriteFile(tempPath, []byte(update.content), 0644)
+		if err != nil {
+			t.Fatalf("Update %d: Failed to write file: %v", i, err)
+		}
+
+		// Wait for event
+		select {
+		case event := <-w.Events:
+			if event.Err != nil {
+				t.Fatalf("Update %d: Watcher error: %v", i, event.Err)
+			}
+			if len(event.Reminders) != update.expected {
+				t.Errorf("Update %d: Expected %d reminders, got %d", i, update.expected, len(event.Reminders))
+			}
+			t.Logf("Update %d: Got %d reminders as expected", i, len(event.Reminders))
+		case <-time.After(3 * time.Second):
+			t.Fatalf("Update %d: Timeout waiting for event", i)
+		}
+
+		// Small delay between updates
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func TestWatchSingleFileEditorSimulation(t *testing.T) {
+	// Simulates how editors typically save files:
+	// 1. Write to temp file
+	// 2. Rename temp to target (or write directly with truncate)
+
+	tempFile, err := os.CreateTemp("", "watch_editor_*.md")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tempPath := tempFile.Name()
+	defer os.Remove(tempPath)
+
+	// Write initial content
+	initialContent := "[remind_me +1h Initial reminder]"
+	_, err = tempFile.WriteString(initialContent)
+	if err != nil {
+		t.Fatalf("Failed to write initial content: %v", err)
+	}
+	tempFile.Close()
+
+	// Create watcher
+	w, err := New()
+	if err != nil {
+		t.Fatalf("Failed to create watcher: %v", err)
+	}
+	defer w.Stop()
+
+	err = w.WatchFile(tempPath)
+	if err != nil {
+		t.Fatalf("Failed to watch file: %v", err)
+	}
+
+	w.Start()
+	time.Sleep(100 * time.Millisecond)
+
+	// Simulate editor save: open, truncate, write, close
+	f, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		t.Fatalf("Failed to open file for writing: %v", err)
+	}
+	newContent := `[remind_me +1h Updated first]
+[remind_me +2h New second]`
+	_, err = f.WriteString(newContent)
+	if err != nil {
+		t.Fatalf("Failed to write: %v", err)
+	}
+	f.Close()
+
+	// Wait for event
+	select {
+	case event := <-w.Events:
+		if event.Err != nil {
+			t.Fatalf("Watcher error: %v", event.Err)
+		}
+		if len(event.Reminders) != 2 {
+			t.Errorf("Expected 2 reminders, got %d", len(event.Reminders))
+			for i, r := range event.Reminders {
+				t.Logf("Reminder %d: %s", i, r.Description)
+			}
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timeout waiting for event")
+	}
+}
+
 func TestWatcherRecursiveDirectories(t *testing.T) {
 	// Create temporary directory structure
 	tempDir, err := os.MkdirTemp("", "watcher_recursive_test")

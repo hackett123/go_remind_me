@@ -312,6 +312,12 @@ func (m Model) View() string {
 			b.WriteString(filterIndicator + clearHint)
 		}
 
+		// Show status message if present
+		if m.statusMessage != "" {
+			b.WriteString("\n")
+			b.WriteString(inputLabelStyle.Render(m.statusMessage))
+		}
+
 		b.WriteString("\n")
 		b.WriteString(m.help.View(m.keys))
 	}

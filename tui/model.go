@@ -74,6 +74,10 @@ type Model struct {
 	// Help
 	help help.Model
 	keys keyMap
+
+	// Status message (shown after actions)
+	statusMessage     string
+	statusMessageTime time.Time
 }
 
 // New creates a new TUI model with the given reminders
