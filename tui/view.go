@@ -74,70 +74,78 @@ func (m Model) compactViewContent() string {
 		MarginTop(1).
 		MarginBottom(0)
 
-	// Build all lines first
-	var allLines []string
-
-	if len(due) > 0 {
-		allLines = append(allLines, sectionStyle.Render("Due"))
-		allLines = append(allLines, m.renderCompactLines(due)...)
+	// Determine visible item range
+	visibleItems := m.visibleCompactItems()
+	totalItems := len(items)
+	startItem := m.compactScroll
+	endItem := m.compactScroll + visibleItems
+	if endItem > totalItems {
+		endItem = totalItems
 	}
-
-	if len(comingUp) > 0 {
-		allLines = append(allLines, sectionStyle.Render("Coming Up!"))
-		allLines = append(allLines, m.renderCompactLines(comingUp)...)
-	}
-
-	if len(tomorrow) > 0 {
-		allLines = append(allLines, sectionStyle.Render("Tomorrow and beyond..."))
-		allLines = append(allLines, m.renderCompactLines(tomorrow)...)
-	}
-
-	if len(allLines) == 0 {
-		return normalStyle.Render("No pending reminders")
-	}
-
-	// Apply scrolling - show only visible lines
-	visibleLines := m.visibleCompactLines()
-	totalLines := len(allLines)
 
 	var output []string
 
 	// Scroll up indicator
 	if m.compactScroll > 0 {
-		output = append(output, sourceStyle.Render(fmt.Sprintf("  ↑ %d more lines above", m.compactScroll)))
+		output = append(output, sourceStyle.Render(fmt.Sprintf("  ↑ %d more items above", m.compactScroll)))
 	}
 
-	startLine := m.compactScroll
-	endLine := m.compactScroll + visibleLines
-	if startLine > totalLines {
-		startLine = totalLines
-	}
-	if endLine > totalLines {
-		endLine = totalLines
+	// Render only items in visible range, with section headers
+	itemIdx := 0
+	if len(due) > 0 {
+		sectionStart := itemIdx
+		sectionEnd := itemIdx + len(due)
+		// Show header if any items from this section are visible
+		if sectionEnd > startItem && sectionStart < endItem {
+			output = append(output, sectionStyle.Render("Due"))
+			output = append(output, m.renderCompactLinesInRange(due, sectionStart, startItem, endItem)...)
+		}
+		itemIdx = sectionEnd
 	}
 
-	output = append(output, allLines[startLine:endLine]...)
+	if len(comingUp) > 0 {
+		sectionStart := itemIdx
+		sectionEnd := itemIdx + len(comingUp)
+		if sectionEnd > startItem && sectionStart < endItem {
+			output = append(output, sectionStyle.Render("Coming Up!"))
+			output = append(output, m.renderCompactLinesInRange(comingUp, sectionStart, startItem, endItem)...)
+		}
+		itemIdx = sectionEnd
+	}
+
+	if len(tomorrow) > 0 {
+		sectionStart := itemIdx
+		sectionEnd := itemIdx + len(tomorrow)
+		if sectionEnd > startItem && sectionStart < endItem {
+			output = append(output, sectionStyle.Render("Tomorrow and beyond..."))
+			output = append(output, m.renderCompactLinesInRange(tomorrow, sectionStart, startItem, endItem)...)
+		}
+	}
 
 	// Scroll down indicator
-	if endLine < totalLines {
-		output = append(output, sourceStyle.Render(fmt.Sprintf("  ↓ %d more lines below", totalLines-endLine)))
+	if endItem < totalItems {
+		output = append(output, sourceStyle.Render(fmt.Sprintf("  ↓ %d more items below", totalItems-endItem)))
+	}
+
+	if len(output) == 0 {
+		return normalStyle.Render("No pending reminders")
 	}
 
 	return strings.Join(output, "\n")
 }
 
-func (m Model) renderCompactLines(items []*reminder.Reminder) []string {
+// renderCompactLinesInRange renders items from a section that fall within the visible range
+// sectionStart is the global index of the first item in this section
+// startItem/endItem define the visible range
+func (m Model) renderCompactLinesInRange(items []*reminder.Reminder, sectionStart, startItem, endItem int) []string {
 	var lines []string
-	allItems := m.getFilteredReminders()
 
-	for _, r := range items {
-		// Find this reminder's global index
-		globalIdx := 0
-		for i, ar := range allItems {
-			if ar == r {
-				globalIdx = i
-				break
-			}
+	for i, r := range items {
+		globalIdx := sectionStart + i
+
+		// Skip items outside visible range
+		if globalIdx < startItem || globalIdx >= endItem {
+			continue
 		}
 
 		timeStr := r.DateTime.Format("Jan 2 3:04pm")

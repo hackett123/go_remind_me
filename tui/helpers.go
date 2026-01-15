@@ -228,9 +228,9 @@ func (m *Model) scrollGridToSelection() {
 	}
 }
 
-// scrollCompactToSelection ensures the selected line is visible
+// scrollCompactToSelection ensures the selected item is visible
 func (m *Model) scrollCompactToSelection() {
-	visibleLines := m.visibleCompactLines()
+	visibleItems := m.visibleCompactItems()
 
 	// Scroll up if selection is above visible area
 	if m.compactIndex < m.compactScroll {
@@ -238,8 +238,8 @@ func (m *Model) scrollCompactToSelection() {
 	}
 
 	// Scroll down if selection is below visible area
-	if m.compactIndex >= m.compactScroll+visibleLines {
-		m.compactScroll = m.compactIndex - visibleLines + 1
+	if m.compactIndex >= m.compactScroll+visibleItems {
+		m.compactScroll = m.compactIndex - visibleItems + 1
 	}
 
 	if m.compactScroll < 0 {
@@ -258,9 +258,11 @@ func (m *Model) visibleGridRows() int {
 	return availableHeight / cardRowHeight
 }
 
-// visibleCompactLines returns how many lines fit in the available height
-func (m *Model) visibleCompactLines() int {
+// visibleCompactItems returns how many items fit in the available height
+// Each item is 1 line, plus we account for ~3 section headers
+func (m *Model) visibleCompactItems() int {
 	availableHeight := m.height - 4 // leave room for help bar and scroll indicators
+	availableHeight -= 3            // approximate space for section headers
 	if availableHeight < 1 {
 		return 1
 	}
