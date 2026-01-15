@@ -238,6 +238,9 @@ type Model struct {
 	gridIndex   int
 	gridColumns int
 
+	// Sorting
+	sortEnabled bool
+
 	// Input handling
 	mode             inputMode
 	filterInput      textinput.Model
@@ -266,8 +269,15 @@ func New(reminders []*reminder.Reminder, watcherEvents <-chan FileUpdateMsg, sto
 
 	items := remindersToItems(reminders)
 
+	asciiTitle := `
+   ___                       _           _   __  __      _ 
+  / __|___    _ _ ___ _ __ (_)_ _  __| | |  \/  |___ | |
+ | (_ / _ \  | '_/ -_) '  \| | ' \/ _' | | |\/| / -_)|_|
+  \___\___/  |_| \___|_|_|_|_|_||_\__,_| |_|  |_\___/(_)
+`
+
 	l := list.New(items, itemDelegate{}, 80, 20)
-	l.Title = "Go Remind Me!"
+	l.Title = asciiTitle
 	l.Styles.Title = titleStyle
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false) // We'll handle filtering ourselves
@@ -297,6 +307,7 @@ func New(reminders []*reminder.Reminder, watcherEvents <-chan FileUpdateMsg, sto
 		addInput:      ai,
 		help:          h,
 		keys:          keys,
+		sortEnabled:   true,
 	}
 }
 
@@ -589,6 +600,10 @@ func (m Model) updateNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Layout):
 		currentLayout = (currentLayout + 1) % LayoutMode(len(layoutNames))
 		m.list.SetDelegate(itemDelegate{})
+		return m, nil
+
+	case key.Matches(msg, keys.Sort):
+		m.sortEnabled = !m.sortEnabled
 		return m, nil
 
 	case key.Matches(msg, keys.Filter):
@@ -946,8 +961,14 @@ func (m Model) View() string {
 
 	// Use grid view for card layout, list view for compact
 	if currentLayout == LayoutCard {
-		b.WriteString(titleStyle.Render("Go Remind Me!"))
-		b.WriteString("\n\n")
+		if len(m.reminders) == 0 {
+			asciiTitle := `   ___                       _           _   __  __      _ 
+  / __|___    _ _ ___ _ __ (_)_ _  __| | |  \/  |___ | |
+ | (_ / _ \  | '_/ -_) '  \| | ' \/ _' | | |\/| / -_)|_|
+  \___\___/  |_| \___|_|_|_|_|_||_\__,_| |_|  |_\___/(_)`
+			b.WriteString(titleStyle.Render(asciiTitle))
+			b.WriteString("\n\n")
+		}
 		b.WriteString(m.gridView())
 	} else {
 		b.WriteString(m.list.View())
@@ -1020,12 +1041,80 @@ func (m Model) gridView() string {
 		cols = 1
 	}
 
+	if !m.sortEnabled {
+		// No sorting - render all cards in grid
+		var rows []string
+		for i := 0; i < len(items); i += cols {
+			var rowCards []string
+			for j := 0; j < cols && i+j < len(items); j++ {
+				idx := i + j
+				rowCards = append(rowCards, m.renderCard(items[idx], idx, cardWidth))
+			}
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, rowCards...))
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, rows...)
+	}
+
+	// Sort into sections
+	now := time.Now()
+	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+	tomorrowEnd := todayEnd.Add(24 * time.Hour)
+
+	var due, comingUp, tomorrow []*reminder.Reminder
+	for _, r := range items {
+		if r.Status == reminder.Acknowledged {
+			continue
+		}
+		if r.DateTime.Before(now) {
+			due = append(due, r)
+		} else if r.DateTime.Before(todayEnd) {
+			comingUp = append(comingUp, r)
+		} else if r.DateTime.Before(tomorrowEnd) {
+			tomorrow = append(tomorrow, r)
+		} else {
+			tomorrow = append(tomorrow, r)
+		}
+	}
+
+	sectionStyle := lipgloss.NewStyle().
+		Foreground(titleStyle.GetForeground()).
+		Bold(true).
+		MarginTop(1).
+		MarginBottom(1)
+
+	var sections []string
+	globalIdx := 0
+
+	if len(due) > 0 {
+		sections = append(sections, sectionStyle.Render("Due"))
+		sections = append(sections, m.renderSection(due, &globalIdx, cols, cardWidth))
+	}
+
+	if len(comingUp) > 0 {
+		sections = append(sections, sectionStyle.Render("Coming Up!"))
+		sections = append(sections, m.renderSection(comingUp, &globalIdx, cols, cardWidth))
+	}
+
+	if len(tomorrow) > 0 {
+		sections = append(sections, sectionStyle.Render("Tomorrow and beyond..."))
+		sections = append(sections, m.renderSection(tomorrow, &globalIdx, cols, cardWidth))
+	}
+
+	if len(sections) == 0 {
+		return normalStyle.Render("No pending reminders")
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+func (m Model) renderSection(items []*reminder.Reminder, globalIdx *int, cols, cardWidth int) string {
 	var rows []string
 	for i := 0; i < len(items); i += cols {
 		var rowCards []string
 		for j := 0; j < cols && i+j < len(items); j++ {
 			idx := i + j
-			rowCards = append(rowCards, m.renderCard(items[idx], idx, cardWidth))
+			rowCards = append(rowCards, m.renderCard(items[idx], *globalIdx, cardWidth))
+			*globalIdx++
 		}
 		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, rowCards...))
 	}
@@ -1289,6 +1378,7 @@ type keyMap struct {
 	Detail        key.Binding
 	Theme         key.Binding
 	Layout        key.Binding
+	Sort          key.Binding
 	Help          key.Binding
 	Quit          key.Binding
 }
@@ -1303,7 +1393,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Acknowledge, k.Unacknowledge},
 		{k.Snooze5m, k.Snooze1h, k.Snooze1d, k.Delete},
-		{k.Filter, k.Add, k.Edit, k.Detail, k.Theme, k.Layout, k.Help, k.Quit},
+		{k.Filter, k.Add, k.Edit, k.Detail, k.Theme, k.Layout, k.Sort, k.Help, k.Quit},
 	}
 }
 
@@ -1363,6 +1453,10 @@ var keys = keyMap{
 	Layout: key.NewBinding(
 		key.WithKeys("v"),
 		key.WithHelp("v", "view"),
+	),
+	Sort: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "sort"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
