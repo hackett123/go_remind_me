@@ -61,13 +61,21 @@ func (m Model) gridViewContent() string {
 		return lipgloss.JoinVertical(lipgloss.Left, rows...)
 	}
 
-	// Sort into sections - for now render all (sections complicate row-based scrolling)
-	// TODO: implement section-aware scrolling
+	// Sort into sections with proper row tracking
 	now := time.Now()
 	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
 	tomorrowEnd := todayEnd.Add(24 * time.Hour)
 
-	var due, comingUp, tomorrow []*reminder.Reminder
+	// Calculate week boundaries (week starts on Sunday)
+	daysUntilEndOfWeek := (7 - int(now.Weekday())) % 7
+	thisWeekEnd := time.Date(now.Year(), now.Month(), now.Day()+daysUntilEndOfWeek, 23, 59, 59, 0, now.Location())
+	nextWeekEnd := thisWeekEnd.Add(7 * 24 * time.Hour)
+
+	// Calculate month boundaries
+	thisMonthEnd := time.Date(now.Year(), now.Month()+1, 0, 23, 59, 59, 0, now.Location())
+	nextMonthEnd := time.Date(now.Year(), now.Month()+2, 0, 23, 59, 59, 0, now.Location())
+
+	var due, comingUp, tomorrow, laterThisWeek, nextWeek, laterThisMonth, beyondNextMonth []*reminder.Reminder
 	for _, r := range items {
 		if r.DateTime.Before(now) {
 			due = append(due, r)
@@ -75,8 +83,16 @@ func (m Model) gridViewContent() string {
 			comingUp = append(comingUp, r)
 		} else if r.DateTime.Before(tomorrowEnd) {
 			tomorrow = append(tomorrow, r)
+		} else if r.DateTime.Before(thisWeekEnd) {
+			laterThisWeek = append(laterThisWeek, r)
+		} else if r.DateTime.Before(nextWeekEnd) {
+			nextWeek = append(nextWeek, r)
+		} else if r.DateTime.Before(thisMonthEnd) {
+			laterThisMonth = append(laterThisMonth, r)
+		} else if r.DateTime.Before(nextMonthEnd) {
+			beyondNextMonth = append(beyondNextMonth, r)
 		} else {
-			tomorrow = append(tomorrow, r)
+			beyondNextMonth = append(beyondNextMonth, r)
 		}
 	}
 
@@ -88,26 +104,35 @@ func (m Model) gridViewContent() string {
 
 	var sections []string
 	globalIdx := 0
+	currentRow := 0
 
 	// Add scroll up indicator for sorted view
 	if m.gridScroll > 0 {
 		sections = append(sections, sourceStyle.Render(fmt.Sprintf("  ↑ %d more rows above", m.gridScroll)))
 	}
 
-	if len(due) > 0 {
-		sections = append(sections, sectionStyle.Render("Due"))
-		sections = append(sections, m.renderSectionWithScroll(due, &globalIdx, cols, cardWidth))
+	// Helper to add a section
+	addSection := func(items []*reminder.Reminder, title string) {
+		if len(items) > 0 {
+			header, content, newRow, newIdx := m.renderSectionWithRowTracking(items, title, sectionStyle, globalIdx, currentRow, cols, cardWidth)
+			if header != "" {
+				sections = append(sections, header)
+			}
+			if content != "" {
+				sections = append(sections, content)
+			}
+			currentRow = newRow
+			globalIdx = newIdx
+		}
 	}
 
-	if len(comingUp) > 0 {
-		sections = append(sections, sectionStyle.Render("Coming Up!"))
-		sections = append(sections, m.renderSectionWithScroll(comingUp, &globalIdx, cols, cardWidth))
-	}
-
-	if len(tomorrow) > 0 {
-		sections = append(sections, sectionStyle.Render("Tomorrow and beyond..."))
-		sections = append(sections, m.renderSectionWithScroll(tomorrow, &globalIdx, cols, cardWidth))
-	}
+	addSection(due, "Due")
+	addSection(comingUp, "Coming Up!")
+	addSection(tomorrow, "Tomorrow")
+	addSection(laterThisWeek, "Later This Week")
+	addSection(nextWeek, "Next Week")
+	addSection(laterThisMonth, "Later This Month")
+	addSection(beyondNextMonth, "Next Month & Beyond")
 
 	// Add scroll down indicator
 	if m.gridScroll+visibleRows < totalRows {
@@ -121,24 +146,35 @@ func (m Model) gridViewContent() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
-func (m Model) renderSectionWithScroll(items []*reminder.Reminder, globalIdx *int, cols, cardWidth int) string {
+// renderSectionWithRowTracking renders a section and tracks rows explicitly
+// Returns: header (if visible), content, new row number, new global index
+func (m Model) renderSectionWithRowTracking(items []*reminder.Reminder, title string, sectionStyle lipgloss.Style, globalIdx, startRow, cols, cardWidth int) (string, string, int, int) {
 	var rows []string
 	visibleRows := m.visibleGridRows()
+	currentRow := startRow
+	hasVisibleRows := false
 
 	for i := 0; i < len(items); i += cols {
-		currentRow := *globalIdx / cols
 		var rowCards []string
 		for j := 0; j < cols && i+j < len(items); j++ {
-			rowCards = append(rowCards, m.renderCard(items[i+j], *globalIdx, cardWidth))
-			*globalIdx++
+			rowCards = append(rowCards, m.renderCard(items[i+j], globalIdx, cardWidth))
+			globalIdx++
 		}
 
 		// Only include row if it's in the visible range
 		if currentRow >= m.gridScroll && currentRow < m.gridScroll+visibleRows {
 			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, rowCards...))
+			hasVisibleRows = true
 		}
+		currentRow++
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+
+	header := ""
+	if hasVisibleRows {
+		header = sectionStyle.Render(title)
+	}
+
+	return header, lipgloss.JoinVertical(lipgloss.Left, rows...), currentRow, globalIdx
 }
 
 func (m Model) renderCard(r *reminder.Reminder, index, width int) string {

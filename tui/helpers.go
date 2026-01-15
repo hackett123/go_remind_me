@@ -210,7 +210,9 @@ func (m *Model) scrollGridToSelection() {
 	if m.gridColumns < 1 {
 		return
 	}
-	selectedRow := m.gridIndex / m.gridColumns
+
+	// Calculate actual row accounting for sections if sorting is enabled
+	selectedRow := m.calculateGridRow(m.gridIndex)
 	visibleRows := m.visibleGridRows()
 
 	// Scroll up if selection is above visible area
@@ -226,6 +228,102 @@ func (m *Model) scrollGridToSelection() {
 	if m.gridScroll < 0 {
 		m.gridScroll = 0
 	}
+}
+
+// calculateGridRow returns the actual row number for a given item index,
+// accounting for section boundaries when sorting is enabled
+func (m *Model) calculateGridRow(itemIndex int) int {
+	if !m.sortEnabled {
+		// No sections - simple calculation
+		return itemIndex / m.gridColumns
+	}
+
+	// With sections, we need to calculate based on section membership
+	items := m.getFilteredReminders()
+	if len(items) == 0 {
+		return 0
+	}
+
+	now := time.Now()
+	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+	tomorrowEnd := todayEnd.Add(24 * time.Hour)
+
+	// Calculate week boundaries (week starts on Sunday)
+	daysUntilEndOfWeek := (7 - int(now.Weekday())) % 7
+	thisWeekEnd := time.Date(now.Year(), now.Month(), now.Day()+daysUntilEndOfWeek, 23, 59, 59, 0, now.Location())
+	nextWeekEnd := thisWeekEnd.Add(7 * 24 * time.Hour)
+
+	// Calculate month boundaries
+	thisMonthEnd := time.Date(now.Year(), now.Month()+1, 0, 23, 59, 59, 0, now.Location())
+	nextMonthEnd := time.Date(now.Year(), now.Month()+2, 0, 23, 59, 59, 0, now.Location())
+
+	// Count items in each section
+	var dueCount, comingUpCount, tomorrowCount, laterThisWeekCount, nextWeekCount, laterThisMonthCount int
+	for _, r := range items {
+		if r.DateTime.Before(now) {
+			dueCount++
+		} else if r.DateTime.Before(todayEnd) {
+			comingUpCount++
+		} else if r.DateTime.Before(tomorrowEnd) {
+			tomorrowCount++
+		} else if r.DateTime.Before(thisWeekEnd) {
+			laterThisWeekCount++
+		} else if r.DateTime.Before(nextWeekEnd) {
+			nextWeekCount++
+		} else if r.DateTime.Before(thisMonthEnd) {
+			laterThisMonthCount++
+		} else if r.DateTime.Before(nextMonthEnd) {
+			// beyondNextMonth - we don't need to count, it's the last section
+		}
+	}
+
+	// Calculate rows per section (ceiling division)
+	cols := m.gridColumns
+	ceilDiv := func(a, b int) int {
+		if a == 0 {
+			return 0
+		}
+		return (a + b - 1) / b
+	}
+
+	dueRows := ceilDiv(dueCount, cols)
+	comingUpRows := ceilDiv(comingUpCount, cols)
+	tomorrowRows := ceilDiv(tomorrowCount, cols)
+	laterThisWeekRows := ceilDiv(laterThisWeekCount, cols)
+	nextWeekRows := ceilDiv(nextWeekCount, cols)
+	laterThisMonthRows := ceilDiv(laterThisMonthCount, cols)
+
+	// Calculate cumulative counts and rows
+	cumCounts := []int{
+		dueCount,
+		dueCount + comingUpCount,
+		dueCount + comingUpCount + tomorrowCount,
+		dueCount + comingUpCount + tomorrowCount + laterThisWeekCount,
+		dueCount + comingUpCount + tomorrowCount + laterThisWeekCount + nextWeekCount,
+		dueCount + comingUpCount + tomorrowCount + laterThisWeekCount + nextWeekCount + laterThisMonthCount,
+	}
+	cumRows := []int{
+		dueRows,
+		dueRows + comingUpRows,
+		dueRows + comingUpRows + tomorrowRows,
+		dueRows + comingUpRows + tomorrowRows + laterThisWeekRows,
+		dueRows + comingUpRows + tomorrowRows + laterThisWeekRows + nextWeekRows,
+		dueRows + comingUpRows + tomorrowRows + laterThisWeekRows + nextWeekRows + laterThisMonthRows,
+	}
+
+	// Determine which section the item is in and calculate row
+	if itemIndex < cumCounts[0] {
+		return itemIndex / cols
+	}
+	for i := 0; i < len(cumCounts)-1; i++ {
+		if itemIndex < cumCounts[i+1] {
+			indexInSection := itemIndex - cumCounts[i]
+			return cumRows[i] + indexInSection/cols
+		}
+	}
+	// Last section (beyond next month)
+	indexInSection := itemIndex - cumCounts[len(cumCounts)-1]
+	return cumRows[len(cumRows)-1] + indexInSection/cols
 }
 
 // scrollCompactToSelection ensures the selected item is visible
@@ -251,7 +349,7 @@ func (m *Model) scrollCompactToSelection() {
 func (m *Model) visibleGridRows() int {
 	// Card height: 4 content + 2 border + 1 margin = 7 lines per row
 	cardRowHeight := 7
-	availableHeight := m.height - 4 // leave room for help bar and scroll indicators
+	availableHeight := m.height - 6 // leave room for help bar and scroll indicators (2 lines)
 	if availableHeight < cardRowHeight {
 		return 1
 	}

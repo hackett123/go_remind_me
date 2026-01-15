@@ -55,7 +55,16 @@ func (m Model) compactViewContent() string {
 	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
 	tomorrowEnd := todayEnd.Add(24 * time.Hour)
 
-	var due, comingUp, tomorrow []*reminder.Reminder
+	// Calculate week boundaries (week starts on Sunday)
+	daysUntilEndOfWeek := (7 - int(now.Weekday())) % 7
+	thisWeekEnd := time.Date(now.Year(), now.Month(), now.Day()+daysUntilEndOfWeek, 23, 59, 59, 0, now.Location())
+	nextWeekEnd := thisWeekEnd.Add(7 * 24 * time.Hour)
+
+	// Calculate month boundaries
+	thisMonthEnd := time.Date(now.Year(), now.Month()+1, 0, 23, 59, 59, 0, now.Location())
+	nextMonthEnd := time.Date(now.Year(), now.Month()+2, 0, 23, 59, 59, 0, now.Location())
+
+	var due, comingUp, tomorrow, laterThisWeek, nextWeek, laterThisMonth, beyondNextMonth []*reminder.Reminder
 	for _, r := range items {
 		if r.DateTime.Before(now) {
 			due = append(due, r)
@@ -63,8 +72,16 @@ func (m Model) compactViewContent() string {
 			comingUp = append(comingUp, r)
 		} else if r.DateTime.Before(tomorrowEnd) {
 			tomorrow = append(tomorrow, r)
+		} else if r.DateTime.Before(thisWeekEnd) {
+			laterThisWeek = append(laterThisWeek, r)
+		} else if r.DateTime.Before(nextWeekEnd) {
+			nextWeek = append(nextWeek, r)
+		} else if r.DateTime.Before(thisMonthEnd) {
+			laterThisMonth = append(laterThisMonth, r)
+		} else if r.DateTime.Before(nextMonthEnd) {
+			beyondNextMonth = append(beyondNextMonth, r)
 		} else {
-			tomorrow = append(tomorrow, r)
+			beyondNextMonth = append(beyondNextMonth, r)
 		}
 	}
 
@@ -92,35 +109,25 @@ func (m Model) compactViewContent() string {
 
 	// Render only items in visible range, with section headers
 	itemIdx := 0
-	if len(due) > 0 {
-		sectionStart := itemIdx
-		sectionEnd := itemIdx + len(due)
-		// Show header if any items from this section are visible
-		if sectionEnd > startItem && sectionStart < endItem {
-			output = append(output, sectionStyle.Render("Due"))
-			output = append(output, m.renderCompactLinesInRange(due, sectionStart, startItem, endItem)...)
+	addSection := func(items []*reminder.Reminder, title string) {
+		if len(items) > 0 {
+			sectionStart := itemIdx
+			sectionEnd := itemIdx + len(items)
+			if sectionEnd > startItem && sectionStart < endItem {
+				output = append(output, sectionStyle.Render(title))
+				output = append(output, m.renderCompactLinesInRange(items, sectionStart, startItem, endItem)...)
+			}
+			itemIdx = sectionEnd
 		}
-		itemIdx = sectionEnd
 	}
 
-	if len(comingUp) > 0 {
-		sectionStart := itemIdx
-		sectionEnd := itemIdx + len(comingUp)
-		if sectionEnd > startItem && sectionStart < endItem {
-			output = append(output, sectionStyle.Render("Coming Up!"))
-			output = append(output, m.renderCompactLinesInRange(comingUp, sectionStart, startItem, endItem)...)
-		}
-		itemIdx = sectionEnd
-	}
-
-	if len(tomorrow) > 0 {
-		sectionStart := itemIdx
-		sectionEnd := itemIdx + len(tomorrow)
-		if sectionEnd > startItem && sectionStart < endItem {
-			output = append(output, sectionStyle.Render("Tomorrow and beyond..."))
-			output = append(output, m.renderCompactLinesInRange(tomorrow, sectionStart, startItem, endItem)...)
-		}
-	}
+	addSection(due, "Due")
+	addSection(comingUp, "Coming Up!")
+	addSection(tomorrow, "Tomorrow")
+	addSection(laterThisWeek, "Later This Week")
+	addSection(nextWeek, "Next Week")
+	addSection(laterThisMonth, "Later This Month")
+	addSection(beyondNextMonth, "Next Month & Beyond")
 
 	// Scroll down indicator
 	if endItem < totalItems {

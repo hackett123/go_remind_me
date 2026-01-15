@@ -73,13 +73,15 @@ func main() {
 	}
 
 	now := time.Now()
-	oneYearLater := now.AddDate(1, 0, 0)
-	totalDays := int(oneYearLater.Sub(now).Hours() / 24)
+	// Range from 30 days ago to 1 year from now
+	pastDays := 30
+	futureDays := 365
+	totalDays := pastDays + futureDays
 
 	reminders := make([]savedReminder, 200)
 	for i := 0; i < 200; i++ {
-		// Random day offset from today to one year from now
-		dayOffset := rand.Intn(totalDays + 1)
+		// Random day offset from -30 days to +365 days
+		dayOffset := rand.Intn(totalDays+1) - pastDays
 		// Random hour (8am to 6pm for realistic business hours)
 		hour := 8 + rand.Intn(11)
 		// Random minute (on the hour, :15, :30, or :45)
